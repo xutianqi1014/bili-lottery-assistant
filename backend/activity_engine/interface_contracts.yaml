@@ -1,0 +1,213 @@
+- contract_id: ACTIVITY-LIKE-WRITE-001
+  owner: shared_activity_engine
+  capability: activity_like
+  request:
+    method: POST
+    origin: https://api.bilibili.com
+    path: /x/dynamic/feed/dyn/thumb
+    risk: write
+    auth: logged_browser_context_required
+  response:
+    envelope_code: 0
+    dom_read_selector: .side-toolbar__action.like.is-active
+    dom_write_selector: .side-toolbar__action.like
+    dom_terminal_confirmation: .side-toolbar__action.like.is-active
+  application_usage:
+    official_participation_marker: true
+    liked_means: already_participated_skip
+    unliked_means: inspect_and_process_official_lottery
+  status: SOURCE_FOUND
+  fallback: DOM_CONFIRMATION
+
+- contract_id: COMMENT-ADD-WRITE-001
+  owner: shared_activity_engine
+  capability: comment_add
+  request:
+    method: POST
+    origin: https://api.bilibili.com
+    path: /x/v2/reply/add
+    risk: write
+    auth: logged_browser_context_required
+  response:
+    envelope_code: 0
+  status: SOURCE_FOUND
+  fallback: COMMENT_COMPONENT_DOM
+
+- contract_id: UNOFFICIAL-PAGE-READ-001
+  owner: unofficial_flow
+  capability: nonofficial_dynamic_structure_and_requirements
+  page_url_template: https://www.bilibili.com/opus/{dynamic_id}
+  discovered_from:
+    kind: authenticated_page_dom
+    source_article: https://www.bilibili.com/opus/1234577521676124161
+    verified_urls:
+      - https://www.bilibili.com/opus/1234492144127836163
+      - https://www.bilibili.com/opus/1233348009982427170
+      - https://t.bilibili.com/1234423607216570384
+  request:
+    method: DOM_READ
+    risk: account_read
+    auth: logged_browser_context_required
+  response:
+    normal_body_selector: .opus-module-content
+    boosted_outer_selector: .bili-dyn-content__forw__desc[data-orig="0"]
+    boosted_original_selector: .bili-dyn-content__orig.reference
+    activity_like_selector: .side-toolbar__action.like
+    activity_liked_selectors:
+      - .side-toolbar__action.like.is-active
+      - .side-toolbar__action.like[aria-pressed="true"]
+      - .side-toolbar__action.like[data-state="active"]
+      - .side-toolbar__action.like[data-liked="true"]
+      - .side-toolbar__action.like[class*="liked"]
+    boosted_rule: forwarded original exists; parse requirements from outer selector only
+  application_usage:
+    batch_preflight: false
+    runtime_current_item_only: true
+    mutations: false
+  evidence_file: tests/fixtures/contracts/UNOFFICIAL-PAGE-READ-001/evidence-2026-08-10-cv52207798.json
+  status: READ_AUTH_PASSED
+  fallback: MANUAL_REVIEW
+
+- contract_id: COMMENT-COMPONENT-DOM-READ-001
+  owner: unofficial_flow
+  capability: comment_component_structure
+  discovered_from:
+    kind: authenticated_page_dom_open_shadow_roots
+    verified_url: https://t.bilibili.com/1234423607216570384
+  request:
+    method: DOM_READ
+    risk: account_read
+    auth: logged_browser_context_required
+  response:
+    shadow_hosts: [bili-comments, bili-comments-header-renderer, bili-comment-box, bili-comment-rich-textarea]
+    editor_selector: .brt-editor[contenteditable="true"]
+    publish_text: 发布
+    simultaneous_repost_component: bili-checkbox
+    boosted_share_dialog: .bili-dyn-share__wrap
+    boosted_share_editor: .bili-rich-textarea__inner[contenteditable="true"]
+    boosted_share_publish: .bili-dyn-share-publishing__action.launcher
+  application_usage:
+    current_phase: runtime_read_then_confirmed_run_write
+    comment_write_enabled: confirmed_run_only
+    repost_write_enabled: confirmed_run_only
+  evidence_file: tests/fixtures/contracts/UNOFFICIAL-PAGE-READ-001/evidence-2026-08-10-cv52207798.json
+  status: READ_AUTH_PASSED
+  fallback: MANUAL_REVIEW
+
+- contract_id: UNOFFICIAL-PARTICIPATE-WRITE-001
+  owner: unofficial_flow
+  capability: nonofficial_comment_repost_like_follow
+  page_url_template: https://www.bilibili.com/opus/{dynamic_id}
+  request:
+    method: DOM_CLICK_AND_FILL
+    origin: https://www.bilibili.com
+    selectors:
+      comment_editor: bili-comments bili-comment-box bili-comment-rich-textarea .brt-editor[contenteditable="true"]
+      comment_publish: bili-comments bili-comment-box button[text="发布"]
+      repost_checkbox: bili-comments bili-comment-box bili-checkbox[value="sync"]
+      dynamic_like: .side-toolbar__action.like
+      forward: .side-toolbar__action.forward
+      follow_profile: .space-follow-btn
+    risk: write
+    auth: logged_browser_context_required
+  response:
+    normal_sequence: [comment_with_repost_checkbox, like, follow]
+    boosted_sequence: [outer_repost, outer_comment, like, follow]
+    comment_source: deepseek_chat_completions
+    required_comment_parts: [generated_body, missing_topics, fixed_mentions]
+    fixed_mention_limit: 3
+    terminal_confirmation:
+      comment: publish_click_accepted_without_comment_list_recheck
+      repost: per_action_dom_state
+      like: per_action_dom_state
+      follow: per_action_dom_state
+    comment_list_recheck: false
+  application_entrypoint:
+    method: POST
+    path: /api/runs/{run_id}/start
+    csrf_required: true
+    requires_confirmed_run_plan: true
+    requires_unofficial_automation_enabled: true
+    requires_deepseek_api_key: true
+    persists_terminal_result: true
+    unknown_result_policy: manual_review_no_retry
+  status: DOM_CONTRACT_IMPLEMENTED_OFFLINE_TESTED
+  fallback: AUTOMATION_STOPPED_MANUAL_REVIEW_NO_RETRY
+
+- contract_id: LOCAL-RUNTIME-SETTINGS-001
+  owner: runtime_configuration
+  capability: deepseek_and_unofficial_account_settings
+  page_url_template: http://127.0.0.1:8787/
+  request:
+    method: POST
+    path: /api/settings
+    risk: local_secret_input
+    auth: csrf_required
+    fields:
+      deepseekApiKey: write_only_runtime_secret
+      deepseekApiUrl: https_url
+      deepseekModel: model_name
+      mentionNames: max_three_fixed_account_names
+  response:
+    deepseekConfigured: boolean_only
+    mentionNames: normalized_names
+    api_key_echo: forbidden
+    persistence: process_memory_only
+  application_usage:
+    unofficial_automation_default_enabled: true
+    missing_key_result: DEEPSEEK_NOT_CONFIGURED
+    key_not_written_to_run_or_database: true
+  status: IMPLEMENTED_OFFLINE_TESTED
+  fallback: SAFE_BLOCK_BEFORE_BILIBILI_WRITE
+
+- contract_id: OFFICIAL-PARTICIPATE-WRITE-001
+  owner: official_flow
+  capability: official_participation
+  page_url_template: https://www.bilibili.com/opus/{dynamic_id}
+  discovered_from:
+    kind: page_dom
+    url_pattern: a[data-type="lottery"] + iframe[src*="/h5/lottery/result"]
+    evidence_fragment: ".side-toolbar__action.like.is-active / 开奖时间 / 已成功参与"
+    verified_urls:
+      - https://www.bilibili.com/opus/1232685708814057480
+      - https://www.bilibili.com/opus/1231172523107811364
+      - https://www.bilibili.com/opus/1231128413813604353
+      - https://www.bilibili.com/opus/1229961252141268994
+      - https://www.bilibili.com/opus/1230812226883944467
+  request:
+    method: DOM_CLICK
+    origin: https://www.bilibili.com
+    selector: iframe[src*="/h5/lottery/result"] + validated participation control + .bili-popup__header__close + .side-toolbar__action.like
+    risk: write
+    auth: logged_browser_context_required
+  response:
+    required_fields: [activity_like_state, lottery_panel_text, participation_terminal_text, lottery_popup_closed]
+    active_lottery_rule: lottery_panel_text contains 开奖时间
+    expired_lottery_rule: lottery_panel_text does not contain 开奖时间
+    legacy_compatibility: pre-click participation success text returns ALREADY_PARTICIPATED with zero business-button clicks
+    post_participation_sequence: close lottery popup and prove iframe detached before a non-forced dynamic-like click
+    terminal_confirmation: "participation success text + .side-toolbar__action.like.is-active"
+  controlled_automation:
+    harness: backend/use_cases/official_participation_execution.py
+    scope_authority: immutable_confirmed_run_plan
+    enable_switch: BILI_OFFICIAL_AUTOMATION_ENABLED=true
+    random_delay_seconds: [3, 5]
+    max_dynamic_targets_per_run: unbounded_within_confirmed_plan
+    per_target_manual_confirmation: false
+  application_entrypoint:
+    method: POST
+    path: /api/runs/{run_id}/start
+    csrf_required: true
+    requires_confirmed_run_plan: true
+    requires_official_automation_enabled: true
+    persists_terminal_result: true
+    cross_run_success_deduplication: false
+    current_page_like_marker_is_authoritative: true
+    unknown_result_policy: manual_review_no_retry
+  evidence_files:
+    - tests/fixtures/contracts/OFFICIAL-PARTICIPATE-WRITE-001/evidence-2026-08-09-1231128413813604353.json
+    - tests/fixtures/contracts/OFFICIAL-PARTICIPATE-WRITE-001/automation-run-2026-08-09-run15.json
+    - tests/fixtures/contracts/OFFICIAL-PARTICIPATE-WRITE-001/evidence-2026-08-10-1233672735227379797-popup.json
+    - tests/fixtures/contracts/OFFICIAL-PARTICIPATE-WRITE-001/automation-run-2026-08-10-run20.json
+  status: WRITE_TEST_PASSED
+  fallback: AUTOMATION_STOPPED_MANUAL_REVIEW_NO_RETRY

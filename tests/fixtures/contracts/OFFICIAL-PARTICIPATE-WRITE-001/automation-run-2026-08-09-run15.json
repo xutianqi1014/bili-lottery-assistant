@@ -1,0 +1,71 @@
+{
+  "contractId": "OFFICIAL-PARTICIPATE-WRITE-001",
+  "runId": 15,
+  "discoveryRunId": 30,
+  "sourceProfileMid": "100680137",
+  "startedAt": "2026-08-09T22:21:01+08:00",
+  "finishedAt": "2026-08-09T22:27:09+08:00",
+  "scope": "23 official dynamics from one immutable confirmed run plan",
+  "policy": {
+    "intervalSeconds": 20,
+    "maxItemsPerRun": 25,
+    "participationControlClickLimitPerTarget": 1,
+    "unknownResultPolicy": "stop_and_manual_review_no_retry",
+    "sourceArticleLikePerformed": false,
+    "commentPerformed": false,
+    "dynamicLikePerformed": false
+  },
+  "summary": {
+    "total": 23,
+    "participationConfirmed": 16,
+    "expiredWithoutParticipationClick": 6,
+    "skippedFromPriorConfirmedRun": 1,
+    "unknownAtCompletion": 0,
+    "runState": "completed"
+  },
+  "items": [
+    {"sequence": 1, "dynamicId": "1234212947623936001", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 2, "dynamicId": "1234029204674183171", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 3, "dynamicId": "1231128413813604353", "resultCode": "ALREADY_PARTICIPATED_PREVIOUS_RUN", "reconciledFromRunId": 12, "externalRetry": false},
+    {"sequence": 4, "dynamicId": "1233618863463071744", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 5, "dynamicId": "1202860369265033238", "resultCode": "LOTTERY_EXPIRED", "externalRetry": false},
+    {"sequence": 6, "dynamicId": "1233672735227379797", "resultCode": "LOTTERY_EXPIRED"},
+    {"sequence": 7, "dynamicId": "1234089978428915744", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 8, "dynamicId": "1231263056738123776", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 9, "dynamicId": "1233718055761084418", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 10, "dynamicId": "1233672679451525138", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 11, "dynamicId": "1233765497953058834", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 12, "dynamicId": "1230704367404843008", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 13, "dynamicId": "1233371920020275216", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 14, "dynamicId": "1224751508380188689", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 15, "dynamicId": "1225130706741493764", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 16, "dynamicId": "1233726796017434628", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 17, "dynamicId": "1203302798163181589", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 18, "dynamicId": "1233724691456196661", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 19, "dynamicId": "1228182061959872517", "resultCode": "LOTTERY_EXPIRED"},
+    {"sequence": 20, "dynamicId": "1233787209027420183", "resultCode": "LOTTERY_EXPIRED"},
+    {"sequence": 21, "dynamicId": "1229961252141268994", "resultCode": "LOTTERY_EXPIRED"},
+    {"sequence": 22, "dynamicId": "1233796718099693587", "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED"},
+    {"sequence": 23, "dynamicId": "1230812226883944467", "resultCode": "LOTTERY_EXPIRED"}
+  ],
+  "incidentsRetainedAsOpenProblems": [
+    {
+      "dynamicId": "1231128413813604353",
+      "resultCode": "OFFICIAL_LOTTERY_PAGE_READ_UNKNOWN",
+      "cause": "user manually closed the browser page before any new click"
+    },
+    {
+      "dynamicId": "1202860369265033238",
+      "resultCode": "OFFICIAL_PARTICIPATION_BUTTON_NOT_FOUND",
+      "cause": "pre-click classifier did not initially prioritize explicit iframe expiry"
+    }
+  ],
+  "sourceClosure": {
+    "sourceArticleId": 16,
+    "url": "https://www.bilibili.com/read/cv52199188",
+    "status": "blocked_not_marked",
+    "openProblemCount": 2,
+    "likePerformed": false
+  },
+  "sensitiveDataStored": false
+}

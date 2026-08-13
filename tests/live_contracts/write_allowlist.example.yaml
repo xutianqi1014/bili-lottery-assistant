@@ -1,0 +1,6 @@
+# 复制到 write_allowlist.yaml 后再填入明确授权的单一测试目标。
+# 来源专栏点赞受控测试只读取 article_ids，并要求恰好一个数字 ID。
+enabled: false
+dynamic_ids: []
+article_ids: []
+author_ids: []

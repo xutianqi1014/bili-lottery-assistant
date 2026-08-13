@@ -1,0 +1,63 @@
+{
+  "contractId": "OFFICIAL-PARTICIPATE-WRITE-001",
+  "evidenceType": "confirmed_run_automation_acceptance",
+  "observedDate": "2026-08-10",
+  "run": {
+    "runId": 20,
+    "discoveryRunId": 36,
+    "state": "completed",
+    "targetCount": 23,
+    "terminalCount": 23,
+    "waitingCount": 0,
+    "openProblemCount": 0
+  },
+  "resultDistribution": {
+    "ALREADY_PARTICIPATED": 20,
+    "LOTTERY_EXPIRED": 1,
+    "OFFICIAL_PARTICIPATION_CONFIRMED": 2
+  },
+  "newParticipationTargets": [
+    {
+      "dynamicId": "1229961252141268994",
+      "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED",
+      "participationTerminalConfirmed": true,
+      "lotteryPopupClosedBeforeLike": true,
+      "activityLikeTerminalConfirmed": true
+    },
+    {
+      "dynamicId": "1230812226883944467",
+      "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED",
+      "participationTerminalConfirmed": true,
+      "lotteryPopupClosedBeforeLike": true,
+      "activityLikeTerminalConfirmed": true
+    }
+  ],
+  "legacyCompatibility": {
+    "count": 20,
+    "resultCode": "ALREADY_PARTICIPATED",
+    "businessButtonClicksPerTarget": 0
+  },
+  "expiryRule": {
+    "count": 1,
+    "resultCode": "LOTTERY_EXPIRED",
+    "rule": "official panel has no draw-time field"
+  },
+  "sourceClosureAtAcceptance": {
+    "sourceArticleDatabaseId": 16,
+    "articleId": "52199188",
+    "terminalActivities": 23,
+    "activityCount": 23,
+    "openProblemCount": 0,
+    "status": "ready_to_mark",
+    "sourceLikePerformedByThisEvidence": false
+  },
+  "manualReview": {
+    "status": "passed",
+    "reviewedBy": "user"
+  },
+  "redaction": {
+    "cookiesIncluded": false,
+    "requestHeadersIncluded": false,
+    "accountIdentifiersIncluded": false
+  }
+}

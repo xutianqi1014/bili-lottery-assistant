@@ -1,0 +1,39 @@
+{
+  "contractId": "OFFICIAL-PARTICIPATE-WRITE-001",
+  "testedAt": "2026-08-10T00:32:24+08:00",
+  "targetUrl": "https://www.bilibili.com/opus/1233672735227379797",
+  "targetDynamicId": "1233672735227379797",
+  "observationMode": "read_only_dom_diagnosis",
+  "runEvidence": {
+    "runId": 19,
+    "activityId": 111,
+    "sourceArticleId": 16,
+    "resultCode": "OFFICIAL_ACTIVITY_LIKE_TERMINAL_UNKNOWN",
+    "recordedMessage": "official activity like marker did not become active after one click"
+  },
+  "beforePopupClose": {
+    "panelContainsDrawTime": true,
+    "panelContainsParticipationSuccess": true,
+    "activityLikeClass": "side-toolbar__action like",
+    "activityLikeActiveCount": 0,
+    "popupCloseSelector": ".bili-popup__header__close",
+    "popupCloseCount": 1,
+    "iframeSelector": "iframe[src*=\"/h5/lottery/result\"]",
+    "iframeCount": 1,
+    "overlayVisible": true
+  },
+  "readOnlyAction": {
+    "action": "close lottery details popup",
+    "businessWritePerformed": false,
+    "activityLikeClicked": false,
+    "participationControlClicked": false
+  },
+  "afterPopupClose": {
+    "iframeCount": 0,
+    "popupCloseCount": 0,
+    "overlayVisible": false,
+    "activityLikeClass": "side-toolbar__action like"
+  },
+  "diagnosis": "The old sequence attempted a forced outer-like click while the lottery overlay was still open. The corrected sequence proves the popup detached before a non-forced like click.",
+  "sensitiveDataStored": false
+}

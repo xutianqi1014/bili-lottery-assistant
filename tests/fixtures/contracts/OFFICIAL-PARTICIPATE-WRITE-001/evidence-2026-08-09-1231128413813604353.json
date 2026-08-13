@@ -1,0 +1,28 @@
+{
+  "contractId": "OFFICIAL-PARTICIPATE-WRITE-001",
+  "testedAt": "2026-08-09T19:54:29+08:00",
+  "targetUrl": "https://www.bilibili.com/opus/1231128413813604353",
+  "targetDynamicId": "1231128413813604353",
+  "authorization": "user explicitly authorized this single dynamic for a real official write test",
+  "browserAction": "opened outer lottery entry, clicked exactly one iframe div.join-button, then reread the iframe",
+  "outerEntrySelector": "a[data-type=lottery]",
+  "iframeSelector": "iframe[src*=\"/h5/lottery/result\"]",
+  "participationSelector": "div.join-button",
+  "before": {
+    "lotteryPanelText": "开奖倒计时 04 天 04 时 06 分；开奖时间：2026年08月14日 00:00；互动条件：关注我、转发本动态；抽奖范围：仅粉丝；抽取人数：10名；奖品：钢岚机兵立牌 * 10份；转发抽奖动态",
+    "participationControlCount": 1,
+    "alreadyParticipatedText": false,
+    "expiredText": false,
+    "countdownPresent": true
+  },
+  "action": {
+    "clickCount": 1,
+    "clickedText": "转发抽奖动态"
+  },
+  "after": {
+    "terminalText": "已成功参与",
+    "resultCode": "OFFICIAL_PARTICIPATION_CONFIRMED",
+    "unknownResult": false
+  },
+  "sensitiveDataStored": false
+}

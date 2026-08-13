@@ -1,0 +1,69 @@
+{
+  "contractId": "UNOFFICIAL-PAGE-READ-001",
+  "inspectedAt": "2026-08-10T11:00:00+08:00",
+  "authorization": "user_authorized_read_only_reference",
+  "sourceArticle": {
+    "url": "https://www.bilibili.com/opus/1234577521676124161",
+    "articleId": "cv52207798"
+  },
+  "samples": [
+    {
+      "kind": "normal",
+      "url": "https://www.bilibili.com/opus/1234492144127836163",
+      "assertions": [
+        "main body contains follow, comment, like and repost requirements",
+        "outer activity like control is .side-toolbar__action.like",
+        "current marker was not active during the read-only inspection"
+      ]
+    },
+    {
+      "kind": "normal_with_comment_instruction",
+      "url": "https://www.bilibili.com/opus/1233348009982427170",
+      "assertions": [
+        "main body asks the participant to share an EC6 cooling tip",
+        "the instruction uses 分享 rather than an explicit 评论 keyword"
+      ]
+    },
+    {
+      "kind": "boosted_outer_forward",
+      "url": "https://t.bilibili.com/1234423607216570384",
+      "assertions": [
+        "outer requirements are in .bili-dyn-content__forw__desc[data-orig='0']",
+        "the nested original is .bili-dyn-content__orig.reference",
+        "the nested opus target is exposed by data-orig='1' and data-url",
+        "the boosted target is the outer current dynamic"
+      ]
+    }
+  ],
+  "commentComponent": {
+    "shadowHosts": [
+      "bili-comments",
+      "bili-comments-header-renderer",
+      "bili-comment-box",
+      "bili-comment-rich-textarea"
+    ],
+    "editor": ".brt-editor[contenteditable='true']",
+    "publishText": "发布",
+    "repostControl": "bili-checkbox"
+  },
+  "shareDialog": {
+    "openedReadOnly": true,
+    "closedWithoutPublishing": true,
+    "dialog": ".bili-dyn-share__wrap",
+    "editor": ".bili-rich-textarea__inner[contenteditable='true']",
+    "publishControl": ".bili-dyn-share-publishing__action.launcher",
+    "closeControl": ".bili-dyn-share-publishing__close"
+  },
+  "externalWrites": {
+    "comment": false,
+    "repost": false,
+    "like": false,
+    "follow": false
+  },
+  "privacy": {
+    "cookiesStored": false,
+    "requestHeadersStored": false,
+    "signedInAccountIdentityStored": false,
+    "otherUsersCommentListStored": false
+  }
+}

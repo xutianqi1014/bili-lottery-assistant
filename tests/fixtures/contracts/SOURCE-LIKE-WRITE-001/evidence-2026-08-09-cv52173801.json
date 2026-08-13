@@ -1,0 +1,30 @@
+{
+  "contract_id": "SOURCE-LIKE-WRITE-001",
+  "tested_at": "2026-08-09T12:04:29+08:00",
+  "test_scope": "single_authorized_source_article",
+  "target": {
+    "input_url": "https://www.bilibili.com/opus/1234111126833201155",
+    "canonical_article_url": "https://www.bilibili.com/read/cv52173801",
+    "article_id": "52173801",
+    "observed_final_url": "https://www.bilibili.com/opus/1234111126833201155"
+  },
+  "selector_version": "source_like_dom_v1",
+  "pre_click": {
+    "button_selector": ".side-toolbar__action.like",
+    "button_count": 1,
+    "active_selector": ".side-toolbar__action.like.is-active",
+    "active_count": 0
+  },
+  "action": {
+    "click_count": 1,
+    "retry_count": 0,
+    "user_authorized": true
+  },
+  "post_click": {
+    "active_count": 1,
+    "button_class": "side-toolbar__action like is-active",
+    "result_code": "SOURCE_LIKE_CONFIRMED"
+  },
+  "production_enabled": false,
+  "sensitive_data": "cookies_headers_and_account_identifiers_omitted"
+}

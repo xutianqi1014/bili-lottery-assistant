@@ -1,0 +1,106 @@
+- contract_id: SRC-READLISTS-001
+  owner: lottery_toolman_v1
+  capability: discover_readlists
+  page_url_template: https://space.bilibili.com/{mid}/upload/opus
+  discovered_from:
+    kind: javascript_bundle
+    url_pattern: /bfs/static/shanks/fresh-space/assets/index-*.js
+    evidence_fragment: /x/article/up/lists
+  request:
+    method: GET
+    origin: https://api.bilibili.com
+    path: /x/article/up/lists
+    query: [mid, sort]
+    headers: [User-Agent, Referer, Origin, Accept]
+    risk: read
+    auth: optional_for_public_fields
+  response:
+    envelope_code: 0
+    required_fields: [data.lists, data.total]
+    item_fields: [id, name, articles_count, update_time]
+  status: READ_ANON_PASSED
+  fallback: DOM_READLIST_CARDS
+
+- contract_id: SRC-ENTRIES-001
+  owner: lottery_toolman_v1
+  capability: discover_entries
+  page_url_template: https://www.bilibili.com/read/readlist/rl{rl_id}
+  discovered_from:
+    kind: javascript_bundle
+    url_pattern: /bfs/static/article-home/assets/article-home-*.js
+    evidence_fragment: /x/article/list/web/articles
+  request:
+    method: GET
+    origin: https://api.bilibili.com
+    path: /x/article/list/web/articles
+    query: [id]
+    headers: [User-Agent, Referer, Origin, Accept]
+    risk: read
+    auth: optional_for_public_fields
+  response:
+    envelope_code: 0
+    required_fields: [data.articles]
+    item_fields: [id, title, publish_time]
+  status: READ_ANON_PASSED
+  fallback: DOM_READLIST_ENTRIES
+
+- contract_id: SOURCE-LIKE-READ-001
+  owner: lottery_toolman_v1
+  capability: inspect_processed_marker
+  page_url_template: https://www.bilibili.com/read/cv{article_id}
+  discovered_from:
+    kind: page_dom
+    evidence_fragment: .side-toolbar__action.like.is-active
+  request:
+    method: DOM
+    risk: account_read
+    auth: logged_browser_context_required
+  response:
+    required_fields: [like_button, active_class]
+  status: READ_AUTH_PASSED
+  fallback: MANUAL_REVIEW
+
+- contract_id: SOURCE-LIKE-WRITE-001
+  owner: lottery_toolman_v1
+  capability: mark_source_article_processed
+  page_url_template: https://www.bilibili.com/read/cv{article_id}
+  discovered_from:
+    kind: page_dom
+    evidence_fragment: .side-toolbar__action.like
+  request:
+    method: DOM_CLICK
+    origin: https://www.bilibili.com
+    selector: .side-toolbar__action.like
+    risk: write
+    auth: logged_browser_context_required
+  response:
+    required_fields: [like_button_active_class]
+    terminal_confirmation: .side-toolbar__action.like.is-active
+  controlled_test:
+    harness: backend/use_cases/source_like_write_test.py
+    allowlist: tests/live_contracts/write_allowlist.yaml
+    environment_ack: BILI_LIVE_WRITE_TEST=I_UNDERSTAND
+    confirmation_text: I_UNDERSTAND_SOURCE_LIKE_WRITE
+    max_article_targets: 1
+    historical_only: true
+  confirmed_run_automation:
+    harness: backend/use_cases/source_like_automation.py
+    scope_authority: immutable_confirmed_run_source_article_ids
+    eligibility: all_related_run_items_terminal_and_zero_open_problems_and_initially_unliked
+    enable_switch: BILI_SOURCE_LIKE_AUTOMATION_ENABLED=true
+    random_delay_seconds: [3, 5]
+    max_article_targets_per_run: 10
+    per_target_manual_confirmation: false
+  application_entrypoint:
+    trigger: confirmed_run_reaches_all_activity_terminal_state
+    path: /api/runs/{run_id}/start
+    csrf_required: true
+    requires_confirmed_run_plan: true
+    requires_ready_to_mark_source_closure: true
+    persists_terminal_result: true
+    unknown_result_policy: manual_review_no_retry
+    legacy_manual_plan_routes_exposed: false
+  evidence_file: tests/fixtures/contracts/SOURCE-LIKE-WRITE-001/evidence-2026-08-09-cv52173801.json
+  status: STALE
+  pending_validation: confirmed_run_automatic_source_closure_requires_manual_review
+  fallback: MANUAL_REVIEW
