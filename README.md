@@ -11,7 +11,7 @@
 
 Windows 用户建议直接从 GitHub Release 下载：
 
-<https://github.com/estartw/bili-lottery-assistant/releases/tag/v0.1.0>
+<https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.0>
 
 下载并解压 `BiliLotteryAssistant-windows-x64-v0.1.0.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
 
