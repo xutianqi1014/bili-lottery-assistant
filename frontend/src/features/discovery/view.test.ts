@@ -121,7 +121,7 @@ afterEach(() => {
 
 function showPage(
   view: DiscoveryView,
-  activePage: "overview" | "discovery" | "execution",
+  activePage: "overview" | "discovery" | "execution" | "logs",
 ): void {
   (view as unknown as { activePage: typeof activePage }).activePage = activePage;
 }
@@ -302,6 +302,123 @@ describe("DiscoveryView no-preflight workflow", () => {
     expect(root.innerHTML).not.toContain("官方自动执行清单");
     expect(root.innerHTML).not.toContain("继续下一条／重新检查当前条目");
     expect(root.innerHTML).not.toContain("data-official-authorize");
+  });
+
+  it("merges confirmation and start into one primary action", () => {
+    vi.spyOn(api, "health").mockResolvedValue({ ok: true, browserReady: false });
+    const root = new FakeRoot();
+    const view = new DiscoveryView(root as unknown as HTMLElement);
+    const internal = view as unknown as { profile: typeof profile; discovery: typeof discovery; problems: never[]; plan: typeof emptyPlan };
+    internal.profile = profile;
+    internal.discovery = discovery;
+    internal.problems = [];
+    internal.plan = emptyPlan;
+    showPage(view, "execution");
+    view.render();
+    expect(root.innerHTML).toContain("确认并开始执行");
+    expect(root.innerHTML).toContain("data-confirm-start-run");
+    expect(root.innerHTML).not.toContain("data-confirm-plan");
+  });
+
+  it("renders the fourth page with concise and detailed runtime logs", () => {
+    const root = new FakeRoot();
+    const view = new DiscoveryView(root as unknown as HTMLElement);
+    (view as unknown as { logs: unknown[] }).logs = [
+      { id: 1, at: "12:00:00", level: "info", summary: "执行计划已开始", event: "run.started" },
+      { id: 2, at: "12:00:02", level: "error", summary: "运行已中断", detail: '{"problemUrl":"https://example.com","apiKey":"[REDACTED]"}', event: "run.interrupted" },
+    ];
+    showPage(view, "logs");
+    view.render();
+    expect(root.innerHTML).toContain("运行日志");
+    expect(root.innerHTML).toContain("复制日志");
+    expect(root.innerHTML).toContain("清空");
+    expect(root.innerHTML).toContain("执行计划已开始");
+    expect(root.innerHTML).toContain("[REDACTED]");
+  });
+
+  it("chains confirmation and start for the merged action", async () => {
+    const confirm = vi.spyOn(api, "confirmRunPlan").mockResolvedValue({ ...emptyPlan, state: "confirmed_waiting_user" });
+    const start = vi.spyOn(api, "startRun").mockResolvedValue({ ...emptyPlan, state: "queued" });
+    const root = new FakeRoot();
+    const view = new DiscoveryView(root as unknown as HTMLElement);
+    (view as unknown as { plan: typeof emptyPlan }).plan = emptyPlan;
+    await view.confirmAndStartRun();
+    expect(confirm).toHaveBeenCalledWith(emptyPlan.id);
+    expect(start).toHaveBeenCalledWith(emptyPlan.id);
+    expect(confirm.mock.invocationCallOrder[0]).toBeLessThan(start.mock.invocationCallOrder[0]);
+  });
+
+  it("keeps the recovery start action after a refreshed confirmed plan", () => {
+    const root = new FakeRoot();
+    const view = new DiscoveryView(root as unknown as HTMLElement);
+    (view as unknown as { plan: typeof emptyPlan; profile: typeof profile; discovery: typeof discovery; problems: never[] }).plan = {
+      ...emptyPlan,
+      state: "confirmed_waiting_user",
+    };
+    (view as unknown as { profile: typeof profile }).profile = profile;
+    (view as unknown as { discovery: typeof discovery }).discovery = discovery;
+    (view as unknown as { problems: never[] }).problems = [];
+    showPage(view, "execution");
+    view.render();
+    expect(root.innerHTML).toContain("开始执行计划");
+    expect(root.innerHTML).not.toContain("确认并开始执行");
+  });
+
+  it("shows an explicit restart action for a blocked item", () => {
+    vi.spyOn(api, "health").mockResolvedValue({ ok: true, browserReady: false });
+    const root = new FakeRoot();
+    const view = new DiscoveryView(root as unknown as HTMLElement);
+    const internal = view as unknown as {
+      profile: typeof profile;
+      discovery: typeof discovery;
+      problems: never[];
+      plan: typeof officialWaitingPlan;
+    };
+    internal.profile = profile;
+    internal.discovery = discovery;
+    internal.problems = [];
+    internal.plan = {
+      ...officialWaitingPlan,
+      state: "waiting_user",
+      stats: { ...officialWaitingPlan.stats, blockedActivities: 1 },
+      items: officialWaitingPlan.items.map((item) => ({
+        ...item,
+        state: "waiting_user",
+        platformStatus: "manual_review",
+      })),
+    };
+
+    showPage(view, "execution");
+    view.render();
+
+    expect(root.innerHTML).toContain("data-restart-run");
+    expect(root.innerHTML).not.toContain("data-resume-run");
+  });
+
+  it("restarts a blocked run through the explicit restart endpoint", async () => {
+    const restart = vi.spyOn(api, "restartRun").mockResolvedValue({ ...emptyPlan, state: "queued" });
+    const view = new DiscoveryView(new FakeRoot() as unknown as HTMLElement);
+    (view as unknown as { plan: typeof emptyPlan }).plan = {
+      ...emptyPlan,
+      state: "waiting_user",
+      stats: { ...emptyPlan.stats, blockedActivities: 1 },
+    };
+
+    await view.restartRun();
+
+    expect(restart).toHaveBeenCalledWith(emptyPlan.id);
+    expect((view as unknown as { plan: typeof emptyPlan }).plan.state).toBe("queued");
+  });
+
+  it("keeps normal event logs short and redacts interruption details", () => {
+    const view = new DiscoveryView(new FakeRoot() as unknown as HTMLElement);
+    view.ingestEvent("run.started", { runId: 9, secret: "do-not-log" });
+    view.ingestEvent("run.interrupted", { runId: 9, problemUrl: "https://example.com", apiKey: "do-not-log" });
+    const logs = (view as unknown as { logs: Array<{ detail?: string; summary: string }> }).logs;
+    expect(logs[0].summary).toContain("执行计划已开始");
+    expect(logs[0].detail).toBeUndefined();
+    expect(logs[1].detail).toContain("[REDACTED]");
+    expect(logs[1].detail).not.toContain("do-not-log");
   });
 
   it("shows only the non-official family label in the run plan", () => {

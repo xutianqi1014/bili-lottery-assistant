@@ -6,7 +6,16 @@ import type {
   SourceProfile,
 } from "../../shared/api";
 
-export type WorkspacePage = "overview" | "discovery" | "execution";
+export type WorkspacePage = "overview" | "discovery" | "execution" | "logs";
+
+export type RuntimeLogEntry = {
+  id: number;
+  at: string;
+  level: "info" | "warn" | "error";
+  summary: string;
+  detail?: string;
+  event?: string;
+};
 
 export type HealthStatus = {
   ok: boolean;
@@ -21,6 +30,7 @@ export type WorkspaceSnapshot = {
   settings: RuntimeSettings | null;
   health: HealthStatus | null;
   statusMessage: string | null;
+  logs: RuntimeLogEntry[];
 };
 
 export type RenderedWorkspacePage = {
@@ -30,5 +40,4 @@ export type RenderedWorkspacePage = {
   content: string;
 };
 
-export const WORKSPACE_PAGES: WorkspacePage[] = ["overview", "discovery", "execution"];
-
+export const WORKSPACE_PAGES: WorkspacePage[] = ["overview", "discovery", "execution", "logs"];

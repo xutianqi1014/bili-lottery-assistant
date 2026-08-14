@@ -144,6 +144,80 @@ class RunExecutionService:
                 status_detail=next_detail,
             )
 
+    def prepare_restart(self, run_id: int) -> Run:
+        """Reset the current blocked item before an explicit user restart.
+
+        A restart is different from the normal resume endpoint.  It is an
+        explicit acknowledgement that the user has manually completed (or
+        corrected) the dynamic that stopped the run.  Only the first
+        unresolved item is reset to ``planned`` so completed and skipped
+        items remain terminal and are never replayed.  The next execution
+        performs a fresh runtime inspection; it can therefore detect the
+        user's manual action and safely skip an already-participated dynamic.
+        """
+
+        with open_session(self.engine) as session:
+            run = session.get(Run, run_id)
+            if run is None:
+                raise ValueError("RUN_NOT_FOUND")
+            if run.state not in {"waiting_user", "interrupted"}:
+                raise ValueError("RUN_NOT_RESTARTABLE")
+
+            items = list(
+                session.exec(
+                    select(RunItem)
+                    .where(RunItem.run_id == run_id)
+                    .order_by(RunItem.__table__.c.sequence)  # type: ignore[attr-defined]
+                ).all()
+            )
+            unresolved = [
+                row
+                for row in items
+                if row.state in {"blocked", "waiting_user", "running"}
+            ]
+            if len(unresolved) > 1:
+                raise ValueError("RUN_RESTART_MULTIPLE_PENDING_ITEMS")
+
+            if unresolved:
+                item = unresolved[0]
+                item.mode = "unknown"
+                item.unofficial_type = "unknown"
+                item.platform_status = "unchecked"
+                item.state = "planned"
+                item.block_reason = None
+                item.runtime_inspected_at = None
+                item.runtime_selector_version = None
+                item.runtime_inspection_json = "{}"
+                item.result_code = None
+                item.result_message = None
+                session.add(item)
+
+            # The explicit restart clears the item-level manual-review gate;
+            # queue() will still fail closed if a different blocked item is
+            # present or if the run state changed concurrently.
+            stats = _load_json_object(run.stats_json)
+            refreshed_items = list(
+                session.exec(select(RunItem).where(RunItem.run_id == run_id)).all()
+            )
+            stats = reconcile_run_item_stats(stats, refreshed_items)
+            stats["requiresManualReview"] = any(
+                row.state in {"blocked", "waiting_user"} for row in refreshed_items
+            )
+            try:
+                restart_count = int(stats.get("restartCount", 0) or 0)
+            except (TypeError, ValueError):
+                restart_count = 0
+            stats["restartCount"] = restart_count + 1
+            run.stats_json = json.dumps(stats, ensure_ascii=False)
+            run.status_detail = (
+                "已人工处理当前问题动态；重新开始后将重新检查当前动态，"
+                "已完成和已跳过动态不会重复执行。"
+            )
+            session.add(run)
+            session.commit()
+            session.refresh(run)
+            return run
+
     def rollback_queue(self, run_id: int, previous_state: str) -> None:
         with open_session(self.engine) as session:
             run = session.get(Run, run_id)

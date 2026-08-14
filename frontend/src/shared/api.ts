@@ -209,6 +209,11 @@ export const api = {
       method: "POST",
       body: "{}",
     }),
+  restartRun: (runId: number) =>
+    request<RunPlan>(`/api/runs/${runId}/restart`, {
+      method: "POST",
+      body: "{}",
+    }),
   getRunPlan: (runId: number) => request<RunPlan>(`/api/runs/${runId}`),
   getRunSourceClosure: (runId: number) =>
     request<SourceClosureSummary>(`/api/runs/${runId}/source-closure`),

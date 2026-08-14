@@ -17,11 +17,11 @@
 - 10 篇来源专栏之间的动态全局去重与 `activity_origins` 来源关系持久化；保存正文指纹、起点模式、排除数和解析问题。
 - 单条活动页面读取器、共享分类器和要求解析器已迁移为执行时即时检查能力；不会在计划生成阶段批量调用。
 - 官方动态即时检查现在会只读点击 `a[data-type="lottery"]` 入口，等待 `iframe[src*="/h5/lottery/result"]` 或官方 dialog，读取 iframe 文本后再判断“已成功参与/已结束”；绝不点击参与、确认、转发、点赞或关注按钮。
-- 新增只读逐条运行执行器：确认计划后通过 `POST /api/runs/{id}/start` 启动，每次只打开当前条目，保存分类、证据码、置信度、要求和安全终态；遇到未知、模式冲突或可参与条目即进入 `waiting_user`，可通过 `POST /api/runs/{id}/resume` 人工继续。
+- 新增只读逐条运行执行器：确认计划后通过 `POST /api/runs/{id}/start` 启动，每次只打开当前条目，保存分类、证据码、置信度、要求和安全终态；遇到未知、模式冲突或可参与条目即进入 `waiting_user`，可通过 `POST /api/runs/{id}/resume` 人工继续；若人工完成了阻塞动态，可通过 `POST /api/runs/{id}/restart` 只重置当前动态并重新检查。
 - HTML 控制台显示动态候选、重复来源关系和来源类别推导的计划流程；候选页面不再提供活动只读预检按钮。
 - 预检兼容接口 `/api/discoveries/{id}/preflight` 只返回 `410 ACTIVITY_PREFLIGHT_REMOVED`，不会提交 Job。
 - 新增 `runs`/`run_items` 不可变执行计划快照：动态候选完成全局去重后直接按 `normal`/`official` 顺序生成动作清单，计划条目初始为 `unknown/unchecked`；问题来源仍自动阻塞；`confirm_each` 确认门只写入本地确认状态，`direct_write_enabled` 固定为 `false`。
-- 新增 `POST /api/runs`、`GET /api/runs/{run_id}`、`POST /api/runs/{run_id}/confirm`、`POST /api/runs/{run_id}/start` 和 `POST /api/runs/{run_id}/resume`；HTML 控制台可预览计划、人工确认、启动逐条即时检查并在每条后暂停。
+- 新增 `POST /api/runs`、`GET /api/runs/{run_id}`、`POST /api/runs/{run_id}/confirm`、`POST /api/runs/{run_id}/start`、`POST /api/runs/{run_id}/resume` 和 `POST /api/runs/{run_id}/restart`；HTML 控制台可预览计划、人工确认、启动逐条即时检查并在每条后暂停。重新开始只重置当前人工复核动态，终态条目不会重复执行。
 - 前端生产构建已输出到 `web_static/dist`。
 - PyInstaller onedir 与 Inno Setup 的 Windows 打包起始文件；本轮已成功重新生成 `dist/BiliLotteryAssistant`，Inno Setup 安装器仍未构建验证。
 - Python 编译、Ruff、Mypy（77 个后端文件）、31 个后端测试、3 个前端 Vitest 测试、接口契约审计和 FastAPI 健康检查均通过。

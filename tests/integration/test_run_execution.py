@@ -307,6 +307,62 @@ async def test_execution_pauses_at_manual_gate_for_eligible_item():
     assert browser.opened_urls == ["https://www.bilibili.com/opus/910000001"]
 
 
+def test_prepare_restart_resets_only_the_current_manual_review_item() -> None:
+    engine = create_engine("sqlite://")
+    init_database(engine)
+    run_id = _seed_run(engine, state="waiting_user")
+    _append_official_item(engine, run_id, dynamic_id="910000002", sequence=2)
+    with Session(engine) as session:
+        run = session.get(Run, run_id)
+        current = session.get(RunItem, (run_id, 1))
+        completed = session.get(RunItem, (run_id, 2))
+        assert run is not None and current is not None and completed is not None
+        current.state = "waiting_user"
+        current.mode = "official"
+        current.platform_status = "manual_review"
+        current.runtime_inspected_at = current.created_at
+        current.runtime_selector_version = "runtime-v1"
+        current.runtime_inspection_json = json.dumps({"resultCode": "UNKNOWN"})
+        current.result_code = "UNKNOWN"
+        current.result_message = "manual review required"
+        current.block_reason = "manual review required"
+        completed.state = "skipped"
+        completed.platform_status = "already_participated"
+        run.stats_json = json.dumps(
+            {
+                "totalActivities": 2,
+                "plannedActivities": 2,
+                "blockedActivities": 1,
+                "skippedActivities": 1,
+                "requiresManualReview": True,
+            }
+        )
+        session.add_all([run, current, completed])
+        session.commit()
+
+    runner = RunExecutionService(engine, _Browser(""), EventHub())
+    prepared = runner.prepare_restart(run_id)
+    assert prepared.state == "waiting_user"
+
+    with Session(engine) as session:
+        run = session.get(Run, run_id)
+        current = session.get(RunItem, (run_id, 1))
+        completed = session.get(RunItem, (run_id, 2))
+        assert run is not None and current is not None and completed is not None
+        assert current.state == "planned"
+        assert current.platform_status == "unchecked"
+        assert current.runtime_inspected_at is None
+        assert current.runtime_inspection_json == "{}"
+        assert current.result_code is None
+        assert completed.state == "skipped"
+        stats = json.loads(run.stats_json)
+        assert stats["requiresManualReview"] is False
+        assert stats["restartCount"] == 1
+
+    queued = runner.queue(run_id, resume=True)
+    assert queued.state == "queued"
+
+
 @pytest.mark.asyncio
 async def test_execution_uses_liked_marker_without_opening_panel():
     engine = create_engine("sqlite://")

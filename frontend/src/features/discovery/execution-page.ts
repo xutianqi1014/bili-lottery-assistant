@@ -47,13 +47,20 @@ function renderPlanItem(item: RunItem): string {
 function renderAction(plan: RunPlan): string {
   const blocked = Number(plan.stats.blockedActivities ?? 0);
   if (plan.state === "awaiting_confirmation" && blocked === 0) {
-    return `<button data-confirm-plan>确认本次运行计划</button>`;
+    return `<button data-confirm-start-run>确认并开始执行</button>`;
   }
   const hasOfficial = plan.items.some((item) => item.family === "official");
   const hasUnofficial = plan.items.some((item) => item.family !== "official");
   if (plan.state === "confirmed_waiting_user") {
     const label = plan.officialAutomationEnabled && hasOfficial && !hasUnofficial ? "开始官方自动执行" : "开始执行计划";
     return `<button data-start-run>${label}</button>`;
+  }
+  // A blocked/interrupted item may have been completed manually in Bilibili.
+  // The explicit restart resets only that current item and re-inspects it;
+  // terminal items remain untouched.  This action is available for both
+  // official and non-official automation runs.
+  if ((plan.state === "waiting_user" || plan.state === "interrupted") && (blocked > 0 || plan.state === "interrupted")) {
+    return `<button data-restart-run title="请先在 B 站完成当前错误动态；重新开始只重新检查当前动态">重新开始</button>`;
   }
   if (plan.state === "waiting_user" && !plan.officialAutomationEnabled) {
     return `<button data-resume-run>继续下一条／重新检查当前条目</button>`;
