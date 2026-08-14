@@ -3,6 +3,7 @@ export function connectEvents(onEvent: (name: string, data: unknown) => void): E
   [
     "job.started",
     "job.finished",
+    "job.cancelled",
     "job.failed",
     "discovery.progress",
     "discovery.article_checked",
@@ -19,6 +20,7 @@ export function connectEvents(onEvent: (name: string, data: unknown) => void): E
     "run.source_closure_updated",
     "run.interrupted",
     "run.waiting_user",
+    "run.restarted",
     "run.finished",
     "run.failed",
   ].forEach((name) => {

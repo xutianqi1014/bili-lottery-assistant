@@ -2,7 +2,7 @@
 
 本项目是一个本机运行的 B 站互动抽奖助手，使用 HTML 控制台操作，浏览器端通过 Playwright 执行页面可见的读写动作。
 
-当前版本：`0.1.0`
+当前版本：`0.1.1`
 
 当前内置来源：MID `100680137`，适配器 `lottery_toolman_v1`
 当前来源页：<https://space.bilibili.com/100680137/upload/opus>
@@ -11,9 +11,9 @@
 
 Windows 用户建议直接从 GitHub Release 下载：
 
-<https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.0>
+<https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.1>
 
-下载并解压 `BiliLotteryAssistant-windows-x64-v0.1.0.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
+下载并解压 `BiliLotteryAssistant-windows-x64-v0.1.1.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
 
 <http://127.0.0.1:8787/>
 
@@ -22,8 +22,9 @@ Windows 用户建议直接从 GitHub Release 下载：
 1. 点击“打开登录页”，在自动打开的 B 站浏览器中完成登录。
 2. 在首页配置 DeepSeek Key、API 地址、模型和最多 3 个固定 @账号，然后点击“保存设置”。
 3. 点击“开始只读发现”。发现结束后，如果存在待处理动态，执行计划会自动生成。
-4. 进入“执行与结果”页，检查动态顺序、流程、页面状态和运行状态，点击“确认本次运行计划”。
-5. 点击“开始执行计划”。程序会按确认计划串行处理，完成后显示来源专栏收尾判定。
+4. 进入“执行与结果”页，检查动态顺序、流程、页面状态和运行状态，点击“确认并开始执行”。该按钮会先确认不可变计划，再自动启动执行；若页面刷新后计划已经确认，则显示“开始执行计划”作为恢复入口。
+5. 进入“运行日志”页查看实时事件。正常事件仅显示短摘要；运行进入 `waiting_user`、`failed`、`interrupted` 或记录问题网址时，会附加脱敏的详细上下文。可用“复制日志”导出当前日志，或用“清空”并确认后清除本次页面会话日志。
+6. 若某条动态因人工复核而暂停，先在 B 站手动完成或修正该动态，再回到第三页点击“重新开始”。该操作只重新检查当前未完成动态，已完成或已跳过动态不会重复执行。
 
 完整的安装、流程、等待时间、环境变量和故障处理请查看：[docs/使用说明.md](docs/使用说明.md)。
 
@@ -49,6 +50,12 @@ python -m backend.launcher
 - 官方互动抽奖和非官方互动抽奖均默认自动执行，但遇到登录、验证码、风控、控件不唯一或终态未知时会立即停止当前条目，并记录问题网址，不自动重试。
 - DeepSeek Key 仅保存在当前本地服务进程内，不写入运行计划、SQLite 或日志；关闭服务后需要重新输入。
 - B 站页面结构、登录状态和风控策略可能变化，自动化结果以页面明确终态为准。
+
+## 贡献者
+
+- [xutianqi1014](https://github.com/xutianqi1014) — 仓库所有者、项目贡献者
+
+完整名单见 [CONTRIBUTORS.md](CONTRIBUTORS.md)。
 
 ## 开发检查
 

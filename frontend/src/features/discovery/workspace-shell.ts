@@ -9,12 +9,14 @@ const PAGE_LABELS: Record<WorkspacePage, string> = {
   overview: "概览与准备",
   discovery: "来源发现",
   execution: "执行与结果",
+  logs: "运行日志",
 };
 
 const PAGE_NUMBERS: Record<WorkspacePage, string> = {
   overview: "01",
   discovery: "02",
   execution: "03",
+  logs: "04",
 };
 
 function navItem(page: WorkspacePage, activePage: WorkspacePage): string {
@@ -78,8 +80,8 @@ function renderWorkflowRail(snapshot: WorkspaceSnapshot, activePage: WorkspacePa
   return `<section class="workflow-rail" aria-label="运行阶段"><div class="workflow-rail-grid">
     ${renderStage("01", "准备", readiness, "api.health", activePage === "overview")}
     ${renderStage("02", "只读发现", discoveryState, "api.getDiscovery", activePage === "discovery")}
-    ${renderStage("03", "审查确认", confirmationState, "api.confirmRunPlan", activePage === "execution")}
-    ${renderStage("04", "自动执行", execution, "api.startRun / resumeRun", activePage === "execution")}
+    ${renderStage("03", "确认并启动", confirmationState, "api.confirmRunPlan → api.startRun", activePage === "execution")}
+    ${renderStage("04", "自动执行", execution, "api.startRun / resumeRun / restartRun", activePage === "execution")}
     ${renderStage("05", "来源收尾", closure, "sourceLikeAutomation", activePage === "execution")}
   </div></section>`;
 }
@@ -90,6 +92,9 @@ function sidebarNote(page: WorkspacePage): string {
   }
   if (page === "execution") {
     return `<strong>SERIAL &amp; TERMINAL</strong><span>逐条执行；未知终态立即停止并保留问题网址。</span>`;
+  }
+  if (page === "logs") {
+    return `<strong>RUNTIME LOGS</strong><span>正常事件保持短摘要；中断、失败或需人工处理时展开安全详细日志。</span>`;
   }
   return `<strong>READ-ONLY FIRST</strong><span>发现阶段不打开候选动态；写操作必须经过计划确认。</span>`;
 }
@@ -114,6 +119,7 @@ export function renderWorkspaceShell(
         ${navItem("overview", activePage)}
         ${navItem("discovery", activePage)}
         ${navItem("execution", activePage)}
+        ${navItem("logs", activePage)}
       </nav>
       <div class="workspace-sidebar-note">${sidebarNote(activePage)}</div>
     </aside>
@@ -126,4 +132,3 @@ export function renderWorkspaceShell(
     </main>
   </div>`;
 }
-

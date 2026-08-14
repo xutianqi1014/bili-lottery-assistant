@@ -153,6 +153,18 @@ td small { display: block; margin-top: 3px; color: #7a8797; font-size: .7rem; }
 .empty-state p { max-width: 620px; margin: 12px auto 0; }
 .loading { padding: 80px 0; text-align: center; color: #607086; }
 
+.runtime-logs-panel { min-height: 420px; }
+.runtime-log-notice { margin: 16px 0; border: 1px solid #dfeaf7; border-radius: 12px; background: #f8fbff; color: var(--muted); padding: 12px 14px; font-size: .82rem; }
+.runtime-log-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.runtime-log-entry { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-subtle); padding: 11px 13px; }
+.runtime-log-entry p { margin: 7px 0 0; color: var(--ink); font-size: .86rem; }
+.runtime-log-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: #778193; font-size: .74rem; }
+.runtime-log-meta code { color: var(--muted-strong); }
+.runtime-log-warn { border-color: var(--notice-line); background: #fffaf0; }
+.runtime-log-error { border-color: #f2d6d9; background: #fff5f5; }
+.runtime-log-detail { margin: 10px 0 0; overflow: auto; max-height: 300px; border: 1px solid rgba(140, 47, 58, .15); border-radius: 9px; background: rgba(255, 255, 255, .75); padding: 10px; color: #7d2834; font: .75rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.runtime-log-empty { border: 1px dashed #c9d6e5; border-radius: 12px; color: var(--muted); padding: 42px 18px; text-align: center; }
+
 @media (max-width: 1100px) {
   .overview-grid { grid-template-columns: 1fr; }
   .source-meta, .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

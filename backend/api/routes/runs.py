@@ -128,6 +128,48 @@ async def resume_run(
     return await _queue_execution(request, run_id, resume=True)
 
 
+@router.post("/api/runs/{run_id}/restart", status_code=status.HTTP_202_ACCEPTED)
+async def restart_run(
+    run_id: int,
+    request: Request,
+    _csrf: Any = Depends(require_csrf),
+) -> dict[str, Any]:
+    """Re-check the current item after the user fixes it manually.
+
+    Unlike ``resume``, this endpoint first clears the current item-level
+    manual-review result and then queues the same immutable run.  Terminal
+    items are left untouched, so a restart cannot replay already completed
+    or skipped dynamics.
+    """
+
+    state = get_state(request)
+    try:
+        current, _items = state.plan_service.get(run_id)
+        previous_state = current.state
+        state.execution_service.prepare_restart(run_id)
+        state.execution_service.queue(run_id, resume=True)
+        try:
+            state.jobs.submit(
+                f"run:{run_id}", lambda: state.execution_service.execute(run_id)
+            )
+        except RuntimeError as exc:
+            state.execution_service.rollback_queue(run_id, previous_state)
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        await state.events.publish(
+            "run.restarted",
+            {
+                "runId": run_id,
+                "state": "queued",
+                "previousState": previous_state,
+            },
+        )
+        return _serialize_run_for_state(state, *state.plan_service.get(run_id))
+    except ValueError as exc:
+        code = str(exc)
+        status_code = 404 if code == "RUN_NOT_FOUND" else 409
+        raise HTTPException(status_code=status_code, detail=code) from exc
+
+
 async def _queue_execution(
     request: Request,
     run_id: int,

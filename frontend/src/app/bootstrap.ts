@@ -11,6 +11,7 @@ export async function bootstrap(root: HTMLElement): Promise<void> {
     const view = new DiscoveryView(root);
     await view.load();
     connectEvents((name, data) => {
+      view.ingestEvent(name, data);
       if (
         name === "discovery.ready"
         || name === "discovery.failed"
