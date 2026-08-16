@@ -1,5 +1,8 @@
 **Design QA**
 
+- release baseline: `v0.1.2` (current `main`)
+- QA document status: current-release baseline; historical comparison notes below are retained for traceability.
+
 - source visual truth paths:
   - `.superdesign/qa/source-overview.jpg`
   - `.superdesign/qa/source-discovery.jpg`
