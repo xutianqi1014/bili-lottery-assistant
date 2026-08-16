@@ -23,6 +23,7 @@ export type HealthStatus = {
 };
 
 export type WorkspaceSnapshot = {
+  profiles: SourceProfile[];
   profile: SourceProfile | null;
   discovery: Discovery | null;
   problems: Problem[];

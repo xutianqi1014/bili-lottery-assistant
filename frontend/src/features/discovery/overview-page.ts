@@ -1,6 +1,17 @@
 import { escapeHtml } from "../../shared/formatters";
 import type { RenderedWorkspacePage, WorkspaceSnapshot } from "./view-types";
 
+function activityTypeLabel(profile: { activityTypes?: string[] }): string {
+  const labels: Record<string, string> = {
+    official: "官方",
+    unofficial: "非官方",
+    reservation: "预约",
+  };
+  return (profile.activityTypes ?? [])
+    .map((value) => labels[value] ?? value)
+    .join(" / ") || "按兼容规则";
+}
+
 function renderSettings(snapshot: WorkspaceSnapshot): string {
   const settings = snapshot.settings ?? {
     deepseekConfigured: false,
@@ -31,13 +42,18 @@ function renderSettings(snapshot: WorkspaceSnapshot): string {
 
 function renderSource(snapshot: WorkspaceSnapshot): string {
   const profile = snapshot.profile;
+  const profilePicker = snapshot.profiles.length > 1
+    ? `<label class="source-picker">选择来源<select data-source-profile>${snapshot.profiles.map((item) => `<option value="${item.id}"${item.id === profile?.id ? " selected" : ""}>${escapeHtml(item.displayName || item.sourceKey)} · ${escapeHtml(item.mid)}</option>`).join("")}</select></label>`
+    : "";
   return `<section class="panel source-panel">
-    <div class="panel-heading"><div><span class="kicker">SOURCE PROFILE</span><h2>当前来源</h2></div><button class="secondary" data-login ${profile ? "" : "disabled"}>打开登录页</button></div>
+    <div class="panel-heading"><div><span class="kicker">SOURCE PROFILE</span><h2>当前来源</h2></div><div class="actions">${profilePicker}<button class="secondary" data-login ${profile ? "" : "disabled"}>打开登录页</button></div></div>
     ${profile ? `<dl class="source-meta">
+      <div><dt>UP</dt><dd>${escapeHtml(profile.displayName || profile.sourceKey)}</dd></div>
       <div><dt>UP / MID</dt><dd>${escapeHtml(profile.mid)}</dd></div>
       <div><dt>适配器</dt><dd>${escapeHtml(profile.adapterKey)}</dd></div>
       <div><dt>来源主页</dt><dd><a href="${escapeHtml(profile.uploadUrl)}" target="_blank" rel="noreferrer">打开 B 站主页</a></dd></div>
       <div><dt>每类最新</dt><dd>${profile.latestPerFamily} 篇</dd></div>
+      <div><dt>允许动态类型</dt><dd>${escapeHtml(activityTypeLabel(profile))}</dd></div>
     </dl>` : `<p class="empty-copy">没有启用的来源配置。</p>`}
   </section>`;
 }
@@ -64,4 +80,3 @@ export function renderOverviewPage(snapshot: WorkspaceSnapshot): RenderedWorkspa
       ${renderSettings(snapshot)}`,
   };
 }
-

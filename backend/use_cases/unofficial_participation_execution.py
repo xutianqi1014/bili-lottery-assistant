@@ -65,11 +65,12 @@ class UnofficialParticipationExecutionService:
         action_plan: UnofficialActionPlan,
         requirements: ParticipationRequirements,
         activity_text: str = "",
+        source_policy_authorized: bool = False,
     ) -> dict[str, Any]:
         if not self.settings.unofficial_automation_enabled:
             raise ValueError("UNOFFICIAL_PARTICIPATION_AUTOMATION_DISABLED")
         run, item = self._get_target(run_id, activity_id)
-        if item.family == "official":
+        if item.family == "official" and not source_policy_authorized:
             raise ValueError("UNOFFICIAL_PARTICIPATION_TARGET_IS_OFFICIAL")
         existing = self._existing_write(run, activity_id)
         if existing is not None:

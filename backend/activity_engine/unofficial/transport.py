@@ -79,7 +79,11 @@ _SUCCESS_MARKERS = (
     "动态发布成功",
     "已转发",
 )
-_SECURITY_MARKERS = ("登录", "验证码", "安全验证", "风险验证")
+# Keep this list limited to explicit verification/challenge signals.  A dynamic
+# can legitimately mention “登录” (for example, a shop being logged in on
+# several platforms); treating that ordinary content as a security challenge
+# would block the first comment before any write occurs.
+_SECURITY_MARKERS = ("验证码", "安全验证", "风险验证")
 _FOLLOW_DONE_MARKERS = ("已关注", "互相关注")
 _FOLLOW_READY_MARKER = "关注"
 _AUTHOR_SEARCH_DELAY_MIN_SEC = 1.0
@@ -138,7 +142,7 @@ class DomUnofficialTransport:
             )
         if await _security_page(page):
             return _unknown(
-                "DYNAMIC_LIKE_SECURITY_CHALLENGE", "login or security verification is visible"
+                "DYNAMIC_LIKE_SECURITY_CHALLENGE", "verification or security challenge is visible"
             )
         try:
             await _click(controls[0])
@@ -163,7 +167,7 @@ class DomUnofficialTransport:
             )
         if await _security_page(page):
             return _unknown(
-                "COMMENT_SECURITY_CHALLENGE", "login or security verification is visible"
+                "COMMENT_SECURITY_CHALLENGE", "verification or security challenge is visible"
             )
         try:
             await _fill(editors[0], text)
@@ -227,7 +231,7 @@ class DomUnofficialTransport:
             )
         if await _security_page(page):
             return _unknown(
-                "REPOST_SECURITY_CHALLENGE", "login or security verification is visible"
+                "REPOST_SECURITY_CHALLENGE", "verification or security challenge is visible"
             )
         try:
             await _click(controls[0])

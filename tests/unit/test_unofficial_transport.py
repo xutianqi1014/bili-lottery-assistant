@@ -357,6 +357,43 @@ async def test_comment_submit_is_accepted_without_comment_list_recheck():
 
 
 @pytest.mark.asyncio
+async def test_comment_does_not_treat_ordinary_logged_word_in_dynamic_body_as_security():
+    """The word 登录 in ordinary dynamic copy is not a verification challenge."""
+    page = _Page()
+    page.body = "线上各平台BOOMCOMIC旗舰店（已登录各平台）福利时间"
+    browser = _Browser({"https://www.bilibili.com/opus/123": page})
+    transport = DomUnofficialTransport(browser, poll_attempts=2, poll_interval_ms=0)
+
+    result = await transport.perform(
+        UnofficialAction.COMMENT,
+        target_url="https://www.bilibili.com/opus/123",
+        payload={"commentText": "参与抽奖"},
+    )
+
+    assert result.state is WriteOutcomeState.SUCCESS
+    assert result.code == "COMMENT_SUBMIT_ACCEPTED"
+    assert page.editor.filled == ["参与抽奖"]
+
+
+@pytest.mark.asyncio
+async def test_comment_still_blocks_explicit_verification_marker():
+    page = _Page()
+    page.body = "请完成验证码后继续"
+    browser = _Browser({"https://www.bilibili.com/opus/123": page})
+    transport = DomUnofficialTransport(browser, poll_attempts=2, poll_interval_ms=0)
+
+    result = await transport.perform(
+        UnofficialAction.COMMENT,
+        target_url="https://www.bilibili.com/opus/123",
+        payload={"commentText": "参与抽奖"},
+    )
+
+    assert result.state is WriteOutcomeState.UNKNOWN
+    assert result.code == "COMMENT_SECURITY_CHALLENGE"
+    assert page.editor.filled == []
+
+
+@pytest.mark.asyncio
 async def test_repost_requires_modal_close_and_success_marker():
     page = _Page()
     browser = _Browser({"https://t.bilibili.com/123": page})

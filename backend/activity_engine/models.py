@@ -4,6 +4,7 @@ from enum import StrEnum
 
 class ActivityMode(StrEnum):
     OFFICIAL = "official"
+    RESERVATION = "reservation"
     UNOFFICIAL = "unofficial"
     UNKNOWN = "unknown"
 
@@ -29,6 +30,9 @@ class ActivitySnapshot:
     canonical_url: str
     body_text: str
     has_official_lottery_entry: bool = False
+    has_reservation_entry: bool = False
+    reservation_active: bool = False
+    reservation_control_text: str = ""
     activity_like_active: bool = False
     already_participated_text: bool = False
     expired_text: bool = False

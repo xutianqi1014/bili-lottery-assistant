@@ -65,6 +65,7 @@ class OfficialParticipationExecutionService:
         run_id: int,
         *,
         activity_id: int,
+        source_policy_authorized: bool = False,
     ) -> dict[str, Any]:
         if not self.settings.official_automation_enabled:
             raise ValueError("OFFICIAL_PARTICIPATION_AUTOMATION_DISABLED")
@@ -73,7 +74,7 @@ class OfficialParticipationExecutionService:
         existing = self._existing_write(run, activity_id)
         if existing is not None:
             return self._reuse_or_reject(run_id, activity_id, item, existing)
-        if item.family != "official":
+        if item.family != "official" and not source_policy_authorized:
             raise ValueError("OFFICIAL_PARTICIPATION_TARGET_NOT_OFFICIAL")
         if item.state not in {"planned", "running"}:
             raise ValueError("OFFICIAL_PARTICIPATION_AUTOMATION_ITEM_NOT_READY")
@@ -325,6 +326,14 @@ class OfficialParticipationExecutionService:
             writes[str(activity_id)] = record
             stats["officialParticipationWrites"] = writes
             if result is not None:
+                if (
+                    result.code.startswith("RESERVATION_")
+                    or result.code == "ALREADY_RESERVED"
+                    or item.mode == "reservation"
+                ):
+                    item.mode = "reservation"
+                else:
+                    item.mode = "official"
                 if result.state is OfficialParticipationOutcomeState.SUCCESS:
                     item.state = "completed"
                     item.platform_status = "participated"

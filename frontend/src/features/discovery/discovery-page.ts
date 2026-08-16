@@ -6,6 +6,17 @@ function stateLabel(state: string): string {
   return { liked: "已点赞/已处理", unliked: "未点赞/待处理", unknown: "未知/人工复核" }[state] ?? state;
 }
 
+function activityTypeLabel(profile: { activityTypes?: string[] }): string {
+  const labels: Record<string, string> = {
+    official: "官方",
+    unofficial: "非官方",
+    reservation: "预约",
+  };
+  return (profile.activityTypes ?? [])
+    .map((value) => labels[value] ?? value)
+    .join(" / ") || "按兼容规则";
+}
+
 function renderAutomaticPlanStatus(
   discovery: Discovery,
   candidateCount: number,
@@ -62,7 +73,10 @@ function renderDiscoverySnapshot(snapshot: WorkspaceSnapshot, discovery: Discove
 
 function renderSourceProfile(snapshot: WorkspaceSnapshot): string {
   const profile = snapshot.profile;
-  return `<section class="panel source-panel"><div class="panel-heading"><div><span class="kicker">SOURCE PROFILE</span><h2>当前来源</h2></div><p class="status-badge" data-status>${escapeHtml(snapshot.statusMessage ?? (snapshot.discovery ? `发现状态：${snapshot.discovery.state}` : "尚未执行发现。"))}</p></div><div class="actions source-actions"><button class="secondary" data-login ${profile ? "" : "disabled"}>打开登录页</button><button data-discover ${profile ? "" : "disabled"}>开始只读发现</button></div>${profile ? `<dl class="source-meta"><div><dt>UP / MID</dt><dd>${escapeHtml(profile.mid)}</dd></div><div><dt>适配器</dt><dd>${escapeHtml(profile.adapterKey)}</dd></div><div><dt>来源主页</dt><dd><a href="${escapeHtml(profile.uploadUrl)}" target="_blank" rel="noreferrer">打开 B 站主页</a></dd></div><div><dt>每类最新</dt><dd>${profile.latestPerFamily} 篇</dd></div></dl>` : `<p class="empty-copy">没有启用的来源配置。</p>`}</section>`;
+  const profilePicker = snapshot.profiles.length > 1
+    ? `<label class="source-picker">选择来源<select data-source-profile>${snapshot.profiles.map((item) => `<option value="${item.id}"${item.id === profile?.id ? " selected" : ""}>${escapeHtml(item.displayName || item.sourceKey)} · ${escapeHtml(item.mid)}</option>`).join("")}</select></label>`
+    : "";
+  return `<section class="panel source-panel"><div class="panel-heading"><div><span class="kicker">SOURCE PROFILE</span><h2>当前来源</h2></div><div class="actions"><p class="status-badge" data-status>${escapeHtml(snapshot.statusMessage ?? (snapshot.discovery ? `发现状态：${snapshot.discovery.state}` : "尚未执行发现。"))}</p>${profilePicker}</div></div><div class="actions source-actions"><button class="secondary" data-login ${profile ? "" : "disabled"}>打开登录页</button><button data-discover ${profile ? "" : "disabled"}>开始只读发现</button></div>${profile ? `<dl class="source-meta"><div><dt>UP</dt><dd>${escapeHtml(profile.displayName || profile.sourceKey)}</dd></div><div><dt>UP / MID</dt><dd>${escapeHtml(profile.mid)}</dd></div><div><dt>适配器</dt><dd>${escapeHtml(profile.adapterKey)}</dd></div><div><dt>来源主页</dt><dd><a href="${escapeHtml(profile.uploadUrl)}" target="_blank" rel="noreferrer">打开 B 站主页</a></dd></div><div><dt>每类最新</dt><dd>${profile.latestPerFamily} 篇</dd></div><div><dt>允许动态类型</dt><dd>${escapeHtml(activityTypeLabel(profile))}</dd></div></dl>` : `<p class="empty-copy">没有启用的来源配置。</p>`}</section>`;
 }
 
 export function renderDiscoveryPage(snapshot: WorkspaceSnapshot): RenderedWorkspacePage {
@@ -73,4 +87,3 @@ export function renderDiscoveryPage(snapshot: WorkspaceSnapshot): RenderedWorksp
     content: `${renderSourceProfile(snapshot)}${snapshot.discovery ? renderDiscoverySnapshot(snapshot, snapshot.discovery) : `<section class="panel empty-state"><span class="kicker">DISCOVERY SNAPSHOT</span><h2>尚未执行只读发现</h2><p>确认登录状态后点击“开始只读发现”。发现阶段不会打开候选动态。</p></section>`}`,
   };
 }
-
