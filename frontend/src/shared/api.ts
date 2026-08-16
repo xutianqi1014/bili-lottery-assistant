@@ -1,12 +1,14 @@
 export type SourceProfile = {
   id: number;
   sourceKey: string;
+  displayName: string;
   platform: string;
   mid: string;
   uploadUrl: string;
   adapterKey: string;
   enabled: boolean;
   latestPerFamily: number;
+  activityTypes?: string[];
   lastDiscoveryAt: string | null;
 };
 
@@ -134,6 +136,7 @@ export type SourceClosureSummary = {
 
 export type Discovery = {
   id: number;
+  profileId: number;
   state: string;
   runPlanId: number | null;
   selectedReadlists: Array<Record<string, unknown>>;

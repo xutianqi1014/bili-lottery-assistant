@@ -41,7 +41,16 @@ function renderSourceClosure(stats: Record<string, unknown>): string {
 }
 
 function renderPlanItem(item: RunItem): string {
-  return `<tr><td>${item.sequence}</td><td><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.title || item.dynamicId)}</a><small>${escapeHtml(item.dynamicId)}</small></td><td><span class="family-label">${escapeHtml(item.family === "official" ? "官方" : "非官方")}</span></td><td>${escapeHtml(item.platformStatus === "unchecked" ? "未检查" : item.platformStatus)}</td><td><span class="state state-${["completed", "skipped"].includes(item.state) ? "liked" : item.state === "planned" ? "unliked" : "unknown"}">${escapeHtml(item.state)}</span></td></tr>`;
+  const modeLabels: Record<string, string> = {
+    official: "官方",
+    reservation: "预约",
+    unofficial: "非官方",
+  };
+  // Before runtime inspection the mode is unknown; retain the discovery
+  // family as a provisional label.  Once inspected, reservation remains a
+  // first-class label instead of being collapsed into official/unofficial.
+  const flow = modeLabels[item.mode] ?? (item.family === "official" ? "官方" : "非官方");
+  return `<tr><td>${item.sequence}</td><td><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.title || item.dynamicId)}</a><small>${escapeHtml(item.dynamicId)}</small></td><td><span class="family-label">${escapeHtml(flow)}</span></td><td>${escapeHtml(item.platformStatus === "unchecked" ? "未检查" : item.platformStatus)}</td><td><span class="state state-${["completed", "skipped"].includes(item.state) ? "liked" : item.state === "planned" ? "unliked" : "unknown"}">${escapeHtml(item.state)}</span></td></tr>`;
 }
 
 function renderAction(plan: RunPlan): string {

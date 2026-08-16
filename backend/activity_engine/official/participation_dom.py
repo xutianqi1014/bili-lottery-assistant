@@ -13,6 +13,11 @@ import re
 from collections.abc import Mapping
 from typing import Any, Protocol
 
+from backend.activity_engine.shared.author_follow import (
+    AuthorFollowState,
+    ensure_author_follow,
+)
+
 from .activity_like_marker import (
     ActivityLikeMarkerState,
     ensure_activity_like_marker,
@@ -31,6 +36,7 @@ LOTTERY_PARTICIPATION_CONTROLS_SELECTOR = (
     'button,[role="button"],a,div.join-button'
 )
 LOTTERY_SELECTOR_VERSION = "official_participation_dom_v2"
+RESERVATION_SELECTOR_VERSION = "reservation_participation_dom_v2-like-follow"
 PARTICIPATION_TEXT_ALLOWLIST = (
     "关注up主并转发抽奖动态",
     "关注我并转发抽奖动态",
@@ -43,6 +49,14 @@ _PANEL_TEXT_ATTEMPTS = 10
 _PANEL_TEXT_INTERVAL_MS = 500
 _POLL_ATTEMPTS = 30
 _POLL_INTERVAL_MS = 500
+_RESERVATION_CONTROL_RE = re.compile(r"^(?:预约|已预约)$")
+_RESERVATION_CARD_RE = re.compile(r"预约\s*有奖")
+_RESERVATION_TERMINAL_RE = re.compile(r"^(?:已结束|预约已结束|预约已过期|已取消)$")
+_RESERVATION_WATCH_ONLY_RE = re.compile(r"^去观看$")
+_RESERVATION_BUTTON_SELECTOR = ".bili-dyn-card-reserve__card button"
+_RESERVATION_MARKER_SELECTOR = ".bili-dyn-card-reserve__lottery__text"
+_RESERVATION_SUCCESS_RE = re.compile(r"预约成功|已参与抽奖|预约成功，已参与抽奖")
+_RESERVATION_EXPIRED_RE = re.compile(r"预约已过期")
 
 
 class OfficialParticipationPage(Protocol):
@@ -76,6 +90,10 @@ class DomOfficialParticipationTransport:
         validate_official_participation_target(target_url)
         try:
             page = await self.browser.open(target_url)
+            # The dynamic-like marker is the cross-run participation marker
+            # for both interactive and reservation lotteries.  Read it before
+            # looking for any actionable reservation/lottery control so an
+            # already processed reservation is skipped without another write.
             like_marker = await inspect_activity_like_marker(
                 page,
                 timeout_ms=self.timeout_ms,
@@ -84,13 +102,41 @@ class DomOfficialParticipationTransport:
                 return OfficialParticipationWriteResult(
                     OfficialParticipationOutcomeState.ALREADY_PARTICIPATED,
                     "ALREADY_PARTICIPATED_LIKED",
-                    "official activity is already liked and is treated as participated",
+                    (
+                        "official or reservation dynamic is already liked and is "
+                        "treated as participated"
+                    ),
                 )
             if like_marker.state is ActivityLikeMarkerState.UNKNOWN:
                 return OfficialParticipationWriteResult(
                     OfficialParticipationOutcomeState.UNKNOWN,
                     like_marker.code,
                     like_marker.message,
+                )
+            reservation_controls, reservation_labels = await _read_reservation_controls(
+                page,
+                self.timeout_ms,
+            )
+            if reservation_labels:
+                return await _perform_reservation(
+                    self.browser,
+                    page,
+                    reservation_controls,
+                    reservation_labels,
+                    self.timeout_ms,
+                )
+            try:
+                body_text = _normalize(
+                    await _read_text(page.locator("body"), self.timeout_ms)
+                )
+            except Exception:
+                # Legacy official page fixtures may not expose a body locator;
+                # the lottery-entry path remains valid without it.
+                body_text = ""
+            if _RESERVATION_CARD_RE.search(body_text):
+                return _failed(
+                    "RESERVATION_CONTROL_NOT_FOUND",
+                    "reservation card was identified but no unique actionable control was found",
                 )
             entry = page.locator(LOTTERY_ENTRY_SELECTOR)
             count = await entry.count()
@@ -229,6 +275,28 @@ async def _read_text(locator: Any, timeout_ms: int) -> str:
     return str(await inner_text(timeout=timeout_ms))
 
 
+async def _read_optional_locator_text(
+    page: OfficialParticipationPage,
+    selector: str,
+    timeout_ms: int,
+) -> str:
+    """Read one transient visible status node without making it required."""
+
+    try:
+        locator = page.locator(selector)
+        count = int(await locator.count())
+        if count <= 0:
+            return ""
+        first = getattr(locator, "first", None)
+        candidate = first if callable(first) else locator
+        visible = getattr(candidate, "is_visible", None)
+        if callable(visible) and not await visible():
+            return ""
+        return _normalize(await _read_text(candidate, timeout_ms))
+    except Exception:
+        return ""
+
+
 async def _read_panel_text(panel: Any, page: OfficialParticipationPage, timeout_ms: int) -> str:
     """Allow the iframe's asynchronous hydration to settle before judging it."""
 
@@ -339,6 +407,207 @@ async def _close_lottery_panel(
 
 def _normalize(value: str) -> str:
     return "".join(value.replace("\u200b", "").replace("\ufeff", "").split())
+
+
+async def _read_reservation_controls(
+    page: OfficialParticipationPage,
+    timeout_ms: int,
+) -> tuple[list[Any], list[str]]:
+    """Find exact visible reserve-card controls, excluding comment text."""
+
+    try:
+        body_text = _normalize(await _read_text(page.locator("body"), timeout_ms))
+    except Exception:
+        body_text = ""
+    has_card_marker = await _has_reservation_card_marker(page, body_text, timeout_ms)
+    if not has_card_marker:
+        return [], []
+    try:
+        locator = page.locator(_RESERVATION_BUTTON_SELECTOR)
+        total = await locator.count()
+    except Exception:
+        # Older official lottery page fixtures do not expose a reserve-card
+        # selector; that is a normal non-reservation page, not a read error.
+        return [], []
+    controls: list[Any] = []
+    labels: list[str] = []
+    nth = getattr(locator, "nth", None)
+    for index in range(total):
+        if callable(nth):
+            candidate = nth(index)
+        elif total == 1 and index == 0:
+            candidate = locator
+        else:
+            continue
+        is_visible = getattr(candidate, "is_visible", None)
+        if callable(is_visible) and not await is_visible():
+            continue
+        label = _normalize(await _read_text(candidate, timeout_ms))
+        if _RESERVATION_CONTROL_RE.fullmatch(label) or (
+            has_card_marker
+            and (
+                _RESERVATION_TERMINAL_RE.fullmatch(label)
+                or _RESERVATION_WATCH_ONLY_RE.fullmatch(label)
+            )
+        ):
+            controls.append(candidate)
+            labels.append(label)
+    return controls, labels
+
+
+async def _has_reservation_card_marker(
+    page: OfficialParticipationPage,
+    body_text: str,
+    timeout_ms: int,
+) -> bool:
+    try:
+        marker = page.locator(_RESERVATION_MARKER_SELECTOR)
+        total = await marker.count()
+        nth = getattr(marker, "nth", None)
+        for index in range(total):
+            candidate = nth(index) if callable(nth) else marker
+            visible = getattr(candidate, "is_visible", None)
+            if callable(visible) and not await visible():
+                continue
+            text = _normalize(await _read_text(candidate, timeout_ms))
+            if _RESERVATION_CARD_RE.search(text):
+                return True
+        if total > 0:
+            return False
+    except Exception:
+        pass
+    return bool(_RESERVATION_CARD_RE.search(body_text))
+
+
+async def _perform_reservation(
+    browser: OfficialParticipationBrowser,
+    page: OfficialParticipationPage,
+    controls: list[Any],
+    labels: list[str],
+    timeout_ms: int,
+) -> OfficialParticipationWriteResult:
+    watch_only_labels = [
+        label for label in labels if _RESERVATION_WATCH_ONLY_RE.fullmatch(label)
+    ]
+    if watch_only_labels:
+        if len(labels) != 1:
+            return _failed(
+                "RESERVATION_CONTROL_AMBIGUOUS",
+                "reserve card exposed both a watch-only and another control",
+            )
+        return OfficialParticipationWriteResult(
+            OfficialParticipationOutcomeState.EXPIRED,
+            "RESERVATION_WATCH_ONLY_SKIPPED",
+            "reservation card shows 去观看; reservation is no longer actionable and was skipped",
+        )
+    if any(_RESERVATION_TERMINAL_RE.fullmatch(label) for label in labels):
+        return OfficialParticipationWriteResult(
+            OfficialParticipationOutcomeState.EXPIRED,
+            "RESERVATION_EXPIRED",
+            "reservation activity explicitly ended; no reservation or like was attempted",
+        )
+    active_count = sum(label == "已预约" for label in labels)
+    unbooked = [
+        control for control, label in zip(controls, labels, strict=True) if label == "预约"
+    ]
+    reservation_message = "reservation control already shows 已预约; no reserve click was made"
+    if active_count == 1 and not unbooked:
+        reservation_confirmed = True
+    else:
+        reservation_confirmed = False
+    if active_count or len(unbooked) != 1:
+        if not reservation_confirmed:
+            return _failed(
+                "RESERVATION_CONTROL_AMBIGUOUS",
+                "reserve card did not expose exactly one unbooked reservation control",
+            )
+    if not reservation_confirmed:
+        button = unbooked[0]
+        try:
+            enabled = getattr(button, "is_enabled", None)
+            if callable(enabled) and not await enabled():
+                return _failed("RESERVATION_CONTROL_DISABLED", "reservation control is disabled")
+            scroll = getattr(button, "scroll_into_view_if_needed", None)
+            if callable(scroll):
+                await scroll(timeout=timeout_ms)
+            await button.click(timeout=timeout_ms)
+        except Exception as exc:  # noqa: BLE001 - click outcome is uncertain
+            return _unknown("RESERVATION_CLICK_UNKNOWN", exc)
+
+        for attempt in range(_POLL_ATTEMPTS):
+            try:
+                latest_controls, latest_labels = await _read_reservation_controls(
+                    page,
+                    timeout_ms,
+                )
+                body_text = _normalize(await _read_text(page.locator("body"), timeout_ms))
+                alert_text = await _read_optional_locator_text(
+                    page,
+                    '[role="alert"]',
+                    timeout_ms,
+                )
+            except Exception as exc:  # noqa: BLE001 - terminal state is uncertain
+                return _unknown("RESERVATION_TERMINAL_READ_UNKNOWN", exc)
+            if _RESERVATION_EXPIRED_RE.search(f"{body_text} {alert_text}"):
+                return OfficialParticipationWriteResult(
+                    OfficialParticipationOutcomeState.EXPIRED,
+                    "RESERVATION_EXPIRED",
+                    "预约点击后页面短暂显示“预约已过期”，安全跳过且不继续点赞或关注",
+                )
+            if "已预约" in latest_labels or _RESERVATION_SUCCESS_RE.search(body_text):
+                reservation_confirmed = True
+                reservation_message = (
+                    "reservation button changed to 已预约 or reported successful participation"
+                )
+                break
+            if attempt + 1 < _POLL_ATTEMPTS:
+                try:
+                    await page.wait_for_timeout(_POLL_INTERVAL_MS)
+                except Exception:
+                    pass
+    if not reservation_confirmed:
+        return OfficialParticipationWriteResult(
+            OfficialParticipationOutcomeState.UNKNOWN,
+            "RESERVATION_TERMINAL_STATE_UNKNOWN",
+            "reservation click had no clear 已预约 or success confirmation",
+        )
+
+    # Like is the participation marker.  It is intentionally confirmed while
+    # the dynamic page is still open, before the follow check navigates the
+    # shared browser page to the author's profile.
+    marker_result = await ensure_activity_like_marker(page, timeout_ms=timeout_ms)
+    if marker_result.state is not ActivityLikeMarkerState.LIKED:
+        return OfficialParticipationWriteResult(
+            OfficialParticipationOutcomeState.UNKNOWN,
+            marker_result.code,
+            (
+                f"{reservation_message}; reservation dynamic like was not confirmed: "
+                f"{marker_result.message}"
+            ),
+        )
+
+    follow_result = await ensure_author_follow(
+        browser,
+        page,
+        timeout_ms=timeout_ms,
+    )
+    if follow_result.state is not AuthorFollowState.FOLLOWING:
+        return OfficialParticipationWriteResult(
+            OfficialParticipationOutcomeState.UNKNOWN,
+            follow_result.code,
+            (
+                f"{reservation_message}; dynamic like confirmed, but author follow "
+                f"was not confirmed: {follow_result.message}"
+            ),
+        )
+    return OfficialParticipationWriteResult(
+        OfficialParticipationOutcomeState.SUCCESS,
+        "RESERVATION_CONFIRMED",
+        (
+            f"{reservation_message}; dynamic like confirmed; author follow confirmed "
+            f"({follow_result.code})"
+        ),
+    )
 
 
 def _is_candidate(text: str) -> bool:

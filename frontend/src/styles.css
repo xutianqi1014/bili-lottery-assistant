@@ -87,6 +87,9 @@ code { background: #f1f4f8; border-radius: 5px; padding: 2px 5px; }
 .panel { margin-top: 18px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); padding: 22px; box-shadow: var(--shadow-card); }
 .panel-heading, .subheading, .plan-top, .problem-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-picker { display: inline-flex; align-items: center; gap: 7px; color: var(--muted-strong); font-size: .78rem; font-weight: 700; }
+.source-picker select { min-width: 190px; border: 1px solid #d8e0ea; border-radius: 9px; background: #fbfcfe; color: var(--ink); padding: 8px 10px; font: inherit; font-weight: 600; }
+.source-picker select:focus { border-color: var(--primary); outline: 2px solid rgba(20, 109, 204, .18); }
 .source-actions { margin-top: 14px; }
 .overview-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 18px; }
 .source-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0 0; }

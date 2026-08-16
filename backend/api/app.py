@@ -22,7 +22,7 @@ from backend.api.routes import (
 from backend.browser.manager import BrowserManager
 from backend.config import get_settings
 from backend.db.engine import build_engine, init_database, open_session
-from backend.db.repositories.profiles import seed_default_profile
+from backend.db.repositories.profiles import seed_builtin_profiles
 from backend.integrations.deepseek import DeepSeekCommentGenerator
 from backend.jobs.events import EventHub
 from backend.jobs.runner import JobRunner
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = build_engine(settings)
     init_database(engine)
     with open_session(engine) as session:
-        seed_default_profile(session)
+        seed_builtin_profiles(session)
     events_hub = EventHub()
     browser = BrowserManager(settings)
     jobs = JobRunner(events_hub)

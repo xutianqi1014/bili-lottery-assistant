@@ -11,7 +11,7 @@ from backend.db.models.discovery import DiscoveryRun
 from backend.db.models.source import Readlist
 from backend.db.repositories import activities, discoveries, profiles, readlists
 from backend.domain.entities import ActivityExtractionResult, SourceArticleCandidate
-from backend.domain.enums import DiscoveryDecision, LikeState, SourceFamily
+from backend.domain.enums import DiscoveryDecision, LikeState
 from backend.domain.ports import SourceDiscoveryAdapter
 from backend.jobs.events import EventHub
 from backend.problems.registry import ProblemRegistry
@@ -67,7 +67,11 @@ class DiscoveryService:
         )
         try:
             candidates = list(await adapter.discover_readlists(profile, self.browser))
-            selected = select_latest_readlist_per_family(candidates)
+            custom_selector = getattr(adapter, "select_readlists", None)
+            if callable(custom_selector):
+                selected = custom_selector(list(candidates))
+            else:
+                selected = select_latest_readlist_per_family(candidates)
             selected_rows = []
             stats = {
                 "candidateReadlists": len(candidates),
@@ -81,8 +85,7 @@ class DiscoveryService:
                 "activityParseProblems": 0,
             }
             seen_activity_ids: set[str] = set()
-            for family in (SourceFamily.NORMAL, SourceFamily.OFFICIAL):
-                candidate = selected[family]
+            for family, candidate in selected.items():
                 with open_session(self.engine) as session:
                     readlist = readlists.upsert_readlist(session, profile.id, candidate)
                     session.commit()

@@ -385,3 +385,72 @@ $env:BILI_DEEPSEEK_MAX_ATTEMPTS = "3"
 当前 `BrowserManager` 分别管理未分配初始页、自动化页和唯一登录页，并监听 Page/BrowserContext 的 `close` 事件及时清除对应引用。每次操作前通过 `context.cookies()` 验证上下文实际存活；关闭的上下文会用同一持久化用户配置重新启动。登录页仍存在时只调用 `bring_to_front()`，不再次导航也不创建标签；关闭后使用空闲初始页或 `new_page()` 重开。所有页面分配都经过一个 `asyncio.Lock`，因此快速连点或并发请求也只能创建一个登录页。登录页与自动化页不再互相导航。前端按钮在请求进行期间禁用，完成后刷新浏览器就绪状态，提示“已打开或已切换至前台”。
 
 新增 5 项浏览器管理器回归测试，覆盖重复点击、同一上下文关闭重开、最后页面关闭后上下文重启、5 个并发请求和登录/自动化页面隔离。真实 Edge 使用临时隔离配置验证结果为：首次 1 页、重复点击仍为 1 页、关闭后返回新 Page、两个并发请求仍返回同一页。完整验证为后端 `168 passed, 2 skipped`、Ruff、Mypy（106 个后端文件）、前端 `11 passed`、TypeScript 检查和 Vite 构建通过；Windows 目录包已重建，包内前端确认包含防重复提示。最新目录包 EXE SHA-256 为 `43B209A7E70407AC40659D5E3477784EFF405F19CC964A94D62D3EBFC93540F0`。
+## 2026-08-15 糯米是个背包年份合集与预约抽奖来源（本地改进）
+
+新增 `nuomi_backpack_v1` 独立来源适配器和内置来源配置，MID 为 `492426375`，显示名为“糯米是个背包”。适配器通过 `x/article/up/lists` 读取合集，只保留名称为四位年份且处于 2000–2100 范围的合集，并以年份、更新时间和合集 ID 的稳定排序选择最大年份；通过 `x/article/list/web/articles` 按原始序号取最新 3 篇，不复用默认 UP 的两类合集规则。当前只读 API 实测选择 `2026` / `rl1016769`，最新序号为 201、200、199，对应 `cv52347493`、`cv52318526`、`cv52291201`。
+
+年份合集内的互动抽奖仍由既有官方流程处理，不新增另一套官方分支。新增 `ActivityMode.RESERVATION` 用于预约卡片：运行时先读取动态点赞标记；已点赞返回 `ALREADY_PARTICIPATED_LIKED`，未点赞时才读取精确可见的 `button` 文本“预约”或“已预约”，并在预约确认后补点动态、检查并完成作者关注。预约流程不会打开互动抽奖 iframe，也不会进入非官方评论/转发流程；预约控件、点赞控件或关注控件歧义、禁用、点击异常和未知终态均记录问题网址并停止当前条目。预约动态参考为 `https://t.bilibili.com/1221942213171216387?spm_id_from=333.1369.0.0`，最新来源专栏参考动态为 `https://www.bilibili.com/opus/1236417468474327060/?from=readlist`。
+
+首页与来源发现页新增内置 UP 选择器，切换来源会清除当前发现/计划并要求重新发现；来源接口返回配置中的 `displayName`。新增回归覆盖年份选择、最新三篇选择、内置配置播种、预约分类/流程、运行时预约按钮读取和预约 DOM 写入幂等。当前本地验收为后端 `179 passed, 2 skipped`、Ruff、Mypy（109 个文件）、前端 `19 passed`、TypeScript 类型检查和 Vite 构建通过；Windows 目录包已重建，EXE SHA-256 为 `83115CF3700A8B8AA4952B356E4516EE790C6BDD0FC876FF1825FF4EF5CC42D7`。本次改动未上传 GitHub，版本号仍保持 `0.1.1`。
+## 2026-08-15 预约抽奖点赞参与标记与作者关注（本地改进）
+
+预约抽奖现在与官方互动抽奖共用动态点赞作为跨运行参与标记：DOM 执行器打开动态后先读取 `.side-toolbar__action.like.is-active`；已点赞直接返回 `ALREADY_PARTICIPATED_LIKED`，不点击预约，也不打开作者主页。未点赞时才读取“预约/已预约”按钮；预约状态确认后必须补点动态并确认点赞标记激活。
+
+预约完成后新增独立作者关注执行器 `backend/activity_engine/shared/author_follow.py`：优先使用动态作者的唯一主页链接，缺失时才在作者搜索页等待 1–2 秒并按精确名称匹配；打开唯一作者主页读取 `.space-follow-btn`，显示“已关注/互相关注”时幂等跳过，显示“关注”时点击一次并确认关注终态。作者解析、关注控件歧义、点击异常或终态未知均进入人工复核，不自动重试。
+
+因此预约条目的成功条件现在是“预约已确认 + 动态点赞已确认 + 作者关注已确认”，统一返回 `RESERVATION_CONFIRMED`；任一写入或终态不明确都会记录问题网址，并保持安全阻塞。后端回归为 `181 passed, 2 skipped`（含本次新增行为），版本号仍为 `0.1.1`，未上传 GitHub。最新目录包 EXE SHA-256 为 `EBDB5412C2F71E65908EE26E6EB80AEC26352E6695BB9A7ECF4BC72FFBE9682F`。
+
+## 2026-08-15 按来源限制动态类型（本地改进）
+
+来源配置新增 `activityTypes` 白名单，并由 `backend/activity_engine/source_policy.py` 统一解析：
+
+- `lottery_toolman`（MID `100680137`）仅允许 `official`、`unofficial`；
+- `nuomi_backpack`（MID `492426375`）仅允许 `official`、`reservation`。
+
+运行时分类仍以动态页面事实为准，不把来源合集的 family 当成动态类型。分类顺序为 `official`、独立的 `reservation`、`unofficial`：预约只有页面正文的“预约有奖”卡片文案才成立；“已结束”按钮只是已识别预约卡片的终态，不会单独触发预约分类。预约即使同时出现评论/转发/关注文字，也不会再改判成非官方。糯米来源若读到非官方动态，或任一来源读到不在白名单内的类型，则返回 `SOURCE_ACTIVITY_TYPE_NOT_ALLOWED`，保存人工复核状态、问题网址，不执行任何外部写操作。
+
+确认运行计划后，带显式白名单的来源会先进行一次运行时分类，再按实际类型选择官方/预约或非官方执行器；旧数据库中尚未写入 `activityTypes` 的测试/遗留来源仍按原 family 兼容路径运行。来源 API 同时返回 `activityTypes`，首页和来源发现页显示“允许动态类型”。新增分类、白名单、内置配置和运行时阻断回归测试；后端 `186 passed, 2 skipped`、Ruff、Mypy（111 个后端文件）、前端 `19 passed`、TypeScript 检查和 Vite 构建均通过。Windows 目录包已重建，`dist/BiliLotteryAssistant/BiliLotteryAssistant.exe` SHA-256 为 `9A92525B1F0E9BD707FCEAB399E3465E03E89ED3B17143D713C29462D570CC65`。本次改动仅保留在本地，未上传 GitHub，版本号仍为 `0.1.1`。
+
+## 2026-08-15 预约类型独立分类与“预约有奖”识别修正
+
+- 预约现在与 `official`、`unofficial` 并列为第三种运行时类型；来源白名单只负责接受/阻止，不再把预约动态改判成非官方。
+- 预约分类唯一页面信号收紧为“预约有奖”卡片文案。按钮“预约”“已预约”只用于执行状态，且只读取 `.bili-dyn-card-reserve__card` 卡片内的按钮；按钮“已结束”仅在已经识别到“预约有奖”卡片后作为终态，不能单独触发预约分类。
+- 对 `1236314913256767520` 这类“预约有奖 + 已结束”页面，运行时会分类为 `reservation`，返回 `RESERVATION_EXPIRED` 并安全跳过，不再产生 `SOURCE_ACTIVITY_TYPE_NOT_ALLOWED` 的非官方误判。
+- 无“预约有奖”卡片或没有唯一可执行预约按钮的页面不会打开互动抽奖面板；写入侧返回 `RESERVATION_CONTROL_NOT_FOUND` / `RESERVATION_CONTROL_AMBIGUOUS` 并人工复核。
+- 执行计划“流程”列现在显示独立的“预约”标签；未完成运行时检查的条目仍显示来源 family 作为临时标签。
+- 已用用户提供的五个动态做只读页面核对：均能看到“预约有奖”，只有可见“预约”按钮的页面允许进入预约写操作，其余按不可预约/终态安全处理。
+- 回归结果：后端 `190 passed, 2 skipped`、Ruff、Mypy（111 个后端文件）；前端 `20 passed`、TypeScript 检查和 Vite 构建通过。Windows 目录包已重建，`dist/BiliLotteryAssistant/BiliLotteryAssistant.exe` SHA-256 为 `78BE21F639D0E4E30D7BC3610A4F26AC19BB6565613EAB3781AF408D50F6E338`。本次改动仅保留在本地，未上传 GitHub，版本号仍为 `0.1.1`。
+
+## 2026-08-15 已消失动态安全跳过（本地改进）
+
+针对 B 站将已删除、下架或不可见动态渲染为“出错啦! - bilibili.com”错误页（常见可见按钮为“返回上一页”“换一张”）的问题，`RuntimeActivityReader` 现在在读取抽奖入口、预约卡片和点赞状态前识别错误页标题/文案。识别成功返回 `DYNAMIC_UNAVAILABLE_SKIPPED`，运行项状态为 `skipped`、平台状态为 `expired`，继续处理下一条；该结果绕过来源类型白名单，不会再把消失页面误判为 `unofficial` 后产生 `SOURCE_ACTIVITY_TYPE_NOT_ALLOWED`，也不会执行任何写操作。
+
+新增单元和运行时策略回归测试，覆盖错误页识别、来源仅允许 `official`/`reservation` 时的安全跳过以及原有预约/官方/非官方分类。版本号仍为 `0.1.1`，本次修改仅保留在本地。
+
+## 2026-08-16 预约“去观看”终态安全跳过（本地改进）
+
+针对预约动态 `1236223920055517329`（用户提供的参考页）在预约卡片中显示“去观看”而不再提供“预约”按钮的问题，运行时现在只在已识别“预约有奖”卡片后接受该控件文本。读取到“去观看”时返回 `RESERVATION_WATCH_ONLY_SKIPPED`，将条目标记为 `skipped`，不点击预约、动态点赞或作者关注，也不会再返回 `RESERVATION_CONTROL_NOT_FOUND`。
+
+DOM 写入层同步识别“去观看”，并在控件与其他按钮同时出现时保持 `RESERVATION_CONTROL_AMBIGUOUS` 的失败关闭策略。针对用户提供的 `1235086118820511764` 实测发现：点击唯一 `button "预约"` 后约 250 毫秒，页面根层短暂插入 `[role="alert"]`，文本为“预约已过期”；预约按钮仍保持“预约”。代码因此在点击后轮询优先读取 `[role="alert"]`，命中后返回 `RESERVATION_EXPIRED`，不再等待 `RESERVATION_TERMINAL_STATE_UNKNOWN`，也不继续点赞或关注。新增预约读页、预约流程和 DOM 传输回归测试；全量后端测试 `198 passed, 2 skipped`，Ruff 和 Mypy 均通过。Windows 目录包已重建，`dist/BiliLotteryAssistant/BiliLotteryAssistant.exe` SHA-256 为 `5E60635B05E584108AF473E7EA31771D6C437BE0EBDC75E8112E0CC9A6E7E51C`。版本号仍为 `0.1.1`，本次修改仅保留在本地，未上传 GitHub。
+
+预约点击后的短暂“预约已过期”提示现在也会被视为明确终态：返回 `RESERVATION_EXPIRED`，条目标记为 `skipped`，不再等待到 `RESERVATION_TERMINAL_STATE_UNKNOWN`，也不会继续点赞或关注。实测页面的可复用定位为 `[role="alert"]`，不能只依赖预约卡片按钮文本。
+
+## 2026-08-16 点赞判断前置并绕过动态类型分类（本地改进）
+
+运行时读取当前动态正文和标题、排除 B 站错误页后，`RuntimeActivityReader` 现在优先检查右侧点赞 active 标记，再读取官方入口、预约卡片和非官方页面证据。已点赞动态会立即返回带 `activity_like_active=true` 的短路快照，不打开互动抽奖面板、不读取预约控件、不解析非官方评论要求。
+
+`RunExecutionService._inspect_item` 在调用 `ActivityClassifier` 前识别该短路快照，直接生成 `ALREADY_PARTICIPATED_LIKED` / `skipped` / `already_liked` 终态，并标记 `typeClassificationSkipped=true`。该终态在来源 `activityTypes` 白名单检查前持久化，因此已点赞动态不会因为页面类型未知或来源不允许该类型而进入 `SOURCE_ACTIVITY_TYPE_NOT_ALLOWED`。未点赞动态继续使用原有 official → reservation → unofficial 分类和对应处理流程；官方/预约写入器仍保留打开页面后的独立点赞复查，防止状态在运行时变化。
+
+新增回归覆盖：点赞标记先于类型选择器读取、限制为 `official`/`reservation` 的来源对已点赞未知类型动态直接跳过，以及既有官方已点赞运行结果。实际验证结果为后端 `200 passed, 2 skipped`、Ruff、Mypy（111 个后端文件）通过；前端 `20 passed`、TypeScript 检查和 Vite 生产构建通过。Windows 目录包已重建，`dist/BiliLotteryAssistant/BiliLotteryAssistant.exe` SHA-256 为 `5538DB5AEE518BDF9E2BCB2076B814FEE550710DE4B298AEC6E4AD8DF303DCD5`。版本号仍为 `0.1.1`，本次修改仅保留在本地，未上传 GitHub。
+
+## 2026-08-16 移除非官方安全检测中的“登录”关键词（本地改进）
+
+运行非官方评论、转发、点赞或关注前，DOM transport 会检查页面是否出现明确的验证挑战。此前安全关键词包含单独的“登录”，导致动态正文中正常业务文案“线上各平台……（已登录各平台）”被误判为安全挑战；运行 84 的动态 852 因此在评论填写前返回 `COMMENT_SECURITY_CHALLENGE`，没有执行评论、转发、点赞或关注。
+
+当前非官方写入安全关键词已收紧为“验证码”“安全验证”“风险验证”。普通正文出现“登录”不再触发 `COMMENT_SECURITY_CHALLENGE` 或同类写入阻断；上述三个明确验证信号仍会阻断写操作并进入人工复核。官方参与页面的登录态/验证正则是独立逻辑，未因本次修改移除。
+
+新增回归测试覆盖“已登录各平台”正常正文可继续评论，以及“验证码”仍会安全阻断。后端全量测试为 `202 passed, 2 skipped`，Ruff 和 Mypy 均通过；Windows 目录包已重建，`dist/BiliLotteryAssistant/BiliLotteryAssistant.exe` SHA-256 为 `752722BD91ECC8E702A24F903C7CC34CD9414593A03D12B1B55041D49C7555F8`。修改仅保留在本地，版本号仍为 `0.1.1`，需使用新运行计划验证，历史 `waiting_user` 条目不会自动重试。
+
+## 2026-08-16 默认抽奖来源显示名（本地改进）
+
+默认 MID `100680137` 的来源显示名已由“默认抽奖来源”改为对应 UP 名称“你的抽奖工具人”。数据库播种逻辑会将遗留数据库中的旧默认标签迁移为新名称，但只要用户已经自定义显示名，就不会覆盖自定义值；新建数据库直接使用新名称。前端来源选择器、测试夹具和使用说明已同步更新。后端全量测试 `203 passed, 2 skipped`、Ruff、Mypy，前端 `20 passed`、TypeScript 检查和 Vite 构建均通过；旧的 `build_watch_expired_20260816*` 和 `dist_watch_expired_20260816*` 留档目录已清理，Windows 目录包重新构建完成，EXE SHA-256 为 `E6DAEDE5E25759B2AD60F008DA78AB751ED96BA926F2BD3866051D344674820F`。版本号仍为 `0.1.1`，本次修改仅保留在本地。

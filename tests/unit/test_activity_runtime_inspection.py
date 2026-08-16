@@ -123,6 +123,61 @@ class _Browser:
         return self.page
 
 
+class _ReservationLocator:
+    def __init__(
+        self,
+        page: "_ReservationPage",
+        count: int = 1,
+        *,
+        body: bool = False,
+    ) -> None:
+        self.page = page
+        self._count = count
+        self._body = body
+
+    async def count(self) -> int:
+        return self._count
+
+    def nth(self, index: int) -> "_ReservationLocator":
+        assert index == 0
+        return self
+
+    async def inner_text(self, timeout: int = 0) -> str:
+        del timeout
+        return self.page.body_text if self._body else self.page.reservation_label
+
+    async def is_visible(self) -> bool:
+        return True
+
+
+class _ReservationPage:
+    url = "https://www.bilibili.com/opus/1221942213171216387"
+    reservation_label = "预约"
+    body_text = "预约有奖：周年私皮回"
+
+    async def content(self) -> str:
+        return "<main>预约有奖：周年私皮回</main>"
+
+    async def title(self) -> str:
+        return "预约有奖：周年私皮回"
+
+    def locator(self, selector: str) -> _ReservationLocator:
+        if selector in {"button", ".bili-dyn-card-reserve__card button"}:
+            return _ReservationLocator(self)
+        if selector == "body":
+            return _ReservationLocator(self, body=True)
+        return _ReservationLocator(self, count=0)
+
+    async def wait_for_timeout(self, timeout: int) -> None:
+        del timeout
+
+
+class _ReservationBrowser:
+    async def open(self, url: str) -> _ReservationPage:
+        del url
+        return _ReservationPage()
+
+
 @pytest.mark.asyncio
 async def test_reader_and_shared_classifier_are_single_item_read_only():
     result = await RuntimeActivityReader().read(
@@ -216,12 +271,46 @@ async def test_reader_uses_liked_marker_without_opening_lottery_panel():
         "400000001",
         "https://www.bilibili.com/opus/400000001",
     )
-    classification = ActivityClassifier().classify(result.snapshot)
 
     assert browser.page is not None and browser.page.clicked is False
     assert result.snapshot.activity_like_active is True
-    assert classification.is_participated is True
-    assert "OFFICIAL_ACTIVITY_LIKED_MARKER" in classification.evidence_codes
+    assert result.snapshot.has_official_lottery_entry is False
+    assert result.snapshot.has_reservation_entry is False
+    assert result.snapshot.nonofficial_dom_evidence == ()
+
+
+@pytest.mark.asyncio
+async def test_reader_checks_like_before_collecting_type_specific_evidence():
+    class _TrackedPage(_Page):
+        def __init__(self) -> None:
+            super().__init__(
+                panel_text="开奖时间：2026年08月12日 18:00",
+                liked=True,
+            )
+            self.selectors: list[str] = []
+
+        def locator(self, selector: str) -> _Locator:
+            self.selectors.append(selector)
+            return super().locator(selector)
+
+    class _TrackedBrowser(_Browser):
+        async def open(self, url: str) -> _TrackedPage:
+            del url
+            self.page = _TrackedPage()
+            return self.page
+
+    browser = _TrackedBrowser()
+    result = await RuntimeActivityReader().read(
+        browser,
+        "400000001",
+        "https://www.bilibili.com/opus/400000001",
+    )
+
+    assert result.snapshot.activity_like_active is True
+    assert browser.page is not None
+    assert any(selector.endswith(".like.is-active") for selector in browser.page.selectors)
+    assert 'a[data-type="lottery"]' not in browser.page.selectors
+    assert not any("reserve" in selector for selector in browser.page.selectors)
 
 
 @pytest.mark.asyncio
@@ -294,3 +383,170 @@ async def test_reader_rejects_redirect_to_another_activity():
         await RuntimeActivityReader().read(
             Browser(), "400000001", "https://www.bilibili.com/opus/400000001"
         )
+
+
+@pytest.mark.asyncio
+async def test_reader_marks_bilibili_error_shell_as_unavailable_dynamic():
+    class UnavailablePage:
+        url = "https://www.bilibili.com/opus/400000001"
+
+        async def content(self) -> str:
+            return "<main>返回上一页 <a href='#up'>换一张</a></main>"
+
+        async def title(self) -> str:
+            return "出错啦! - bilibili.com"
+
+        def locator(self, selector: str) -> _Locator:
+            if selector == "body":
+                return _Locator(1, "返回上一页 换一张")
+            return _Locator(0)
+
+    class UnavailableBrowser:
+        async def open(self, url: str) -> UnavailablePage:
+            del url
+            return UnavailablePage()
+
+    result = await RuntimeActivityReader().read(
+        UnavailableBrowser(),
+        "400000001",
+        "https://www.bilibili.com/opus/400000001",
+    )
+
+    assert result.dynamic_unavailable is True
+    assert result.snapshot.expired_text is True
+    assert result.snapshot.has_official_lottery_entry is False
+    assert result.snapshot.has_reservation_entry is False
+
+
+@pytest.mark.asyncio
+async def test_reader_detects_reservation_button_without_opening_official_panel():
+    result = await RuntimeActivityReader().read(
+        _ReservationBrowser(),
+        "1221942213171216387",
+        "https://www.bilibili.com/opus/1221942213171216387",
+    )
+
+    assert result.snapshot.has_official_lottery_entry is False
+    assert result.snapshot.has_reservation_entry is True
+    assert result.snapshot.reservation_active is False
+    assert result.snapshot.reservation_control_text == "预约"
+
+
+@pytest.mark.asyncio
+async def test_reader_uses_only_reservation_prize_marker_not_ended_button() -> None:
+    class EndedReservationPage(_ReservationPage):
+        reservation_label = "已结束"
+        body_text = "直播预约：王者游戏回 预约有奖：甜水卡*1份"
+
+        async def content(self) -> str:
+            return "<main>直播预约：王者游戏回 预约有奖：甜水卡*1份</main>"
+
+    class EndedReservationBrowser:
+        async def open(self, url: str) -> EndedReservationPage:
+            del url
+            return EndedReservationPage()
+
+    result = await RuntimeActivityReader().read(
+        EndedReservationBrowser(),
+        "1221942213171216387",
+        "https://www.bilibili.com/opus/1221942213171216387",
+    )
+
+    assert result.snapshot.has_reservation_entry is True
+    assert result.snapshot.reservation_control_text == "已结束"
+    assert result.snapshot.expired_text is True
+
+
+@pytest.mark.asyncio
+async def test_reader_treats_watch_only_reservation_card_as_terminal() -> None:
+    class WatchOnlyReservationPage(_ReservationPage):
+        url = "https://www.bilibili.com/opus/1236223920055517329"
+        reservation_label = "去观看"
+        body_text = "预约有奖：直播回放"
+
+        async def content(self) -> str:
+            return "<main>预约有奖：直播回放</main>"
+
+    class WatchOnlyReservationBrowser:
+        async def open(self, url: str) -> WatchOnlyReservationPage:
+            del url
+            return WatchOnlyReservationPage()
+
+    result = await RuntimeActivityReader().read(
+        WatchOnlyReservationBrowser(),
+        "1236223920055517329",
+        "https://www.bilibili.com/opus/1236223920055517329",
+    )
+
+    assert result.snapshot.has_reservation_entry is True
+    assert result.snapshot.reservation_control_text == "去观看"
+    assert result.snapshot.expired_text is True
+
+
+@pytest.mark.asyncio
+async def test_reader_treats_expired_reservation_button_as_terminal() -> None:
+    class ExpiredReservationPage(_ReservationPage):
+        url = "https://www.bilibili.com/opus/1235086118820511764"
+        reservation_label = "预约已过期"
+        body_text = "预约有奖：直播回放 预约已过期"
+
+    class ExpiredReservationBrowser:
+        async def open(self, url: str) -> ExpiredReservationPage:
+            del url
+            return ExpiredReservationPage()
+
+    result = await RuntimeActivityReader().read(
+        ExpiredReservationBrowser(),
+        "1235086118820511764",
+        "https://www.bilibili.com/opus/1235086118820511764",
+    )
+
+    assert result.snapshot.has_reservation_entry is True
+    assert result.snapshot.reservation_control_text == "预约已过期"
+    assert result.snapshot.expired_text is True
+
+
+@pytest.mark.asyncio
+async def test_reader_does_not_classify_generic_reservation_word_as_reservation():
+    class GenericReservationPage(_ReservationPage):
+        def __init__(self) -> None:
+            self.reservation_label = "查看详情"
+            self.body_text = "直播预约：周年直播，请大家预约观看"
+
+        async def content(self) -> str:
+            return "<main>直播预约：周年直播，请大家预约观看</main>"
+
+        async def title(self) -> str:
+            return "直播预约：周年直播"
+
+    class GenericReservationBrowser:
+        async def open(self, url: str) -> GenericReservationPage:
+            del url
+            return GenericReservationPage()
+
+    result = await RuntimeActivityReader().read(
+        GenericReservationBrowser(),
+        "1221942213171216387",
+        "https://www.bilibili.com/opus/1221942213171216387",
+    )
+
+    assert result.snapshot.has_reservation_entry is False
+
+
+@pytest.mark.asyncio
+async def test_reader_does_not_classify_reservation_button_without_prize_marker():
+    class ButtonOnlyPage(_ReservationPage):
+        body_text = "普通动态正文"
+
+    class ButtonOnlyBrowser:
+        async def open(self, url: str) -> ButtonOnlyPage:
+            del url
+            return ButtonOnlyPage()
+
+    result = await RuntimeActivityReader().read(
+        ButtonOnlyBrowser(),
+        "1221942213171216387",
+        "https://www.bilibili.com/opus/1221942213171216387",
+    )
+
+    assert result.snapshot.has_reservation_entry is False

@@ -21,6 +21,7 @@ import {
 
 export class DiscoveryView {
   private root: HTMLElement;
+  private profiles: SourceProfile[] = [];
   private profile: SourceProfile | null = null;
   private discovery: Discovery | null = null;
   private problems: Problem[] = [];
@@ -44,7 +45,8 @@ export class DiscoveryView {
       api.getSettings(),
       api.health().catch(() => ({ ok: false, browserReady: false })),
     ]);
-    this.profile = sources.find((item) => item.enabled) ?? null;
+    this.profiles = sources.filter((item) => item.enabled);
+    this.profile = this.profiles[0] ?? null;
     this.settings = settings;
     this.health = health;
     this.appendLog("info", "本地控制台已连接");
@@ -100,6 +102,19 @@ export class DiscoveryView {
     await this.refresh(result.discoveryId);
   }
 
+  selectProfile(profileId: number): void {
+    const selected = this.profiles.find((item) => item.id === profileId && item.enabled);
+    if (!selected || selected.id === this.profile?.id) return;
+    this.profile = selected;
+    this.discovery = null;
+    this.problems = [];
+    this.plan = null;
+    forgetDiscoveryId();
+    this.setMessage(`已切换来源：${selected.displayName}；请重新开始只读发现。`);
+    this.appendLog("info", `切换来源：${selected.displayName}`);
+    this.render();
+  }
+
   async refresh(id?: number): Promise<void> {
     const target = id ?? this.discovery?.id;
     if (!target) return;
@@ -109,6 +124,10 @@ export class DiscoveryView {
       this.appendLog("error", "读取发现状态失败", { discoveryId: target, error: String(error) }, "discovery.refresh_failed");
       throw error;
     }
+    const discoveredProfile = this.profiles.find(
+      (item) => item.id === this.discovery?.profileId,
+    );
+    if (discoveredProfile) this.profile = discoveredProfile;
     rememberDiscoveryId(target);
     const previousProblemIds = new Set(this.problems.map((problem) => problem.id));
     this.problems = await api.getProblems(target);
@@ -238,6 +257,15 @@ export class DiscoveryView {
     this.root.querySelector<HTMLButtonElement>("[data-discover]")?.addEventListener(
       "click",
       () => void this.start(),
+    );
+    this.root.querySelector<HTMLSelectElement>("[data-source-profile]")?.addEventListener(
+      "change",
+      (event) => {
+        const select = event.currentTarget;
+        if (select instanceof HTMLSelectElement) {
+          this.selectProfile(Number(select.value));
+        }
+      },
     );
     this.root.querySelector<HTMLFormElement>("[data-settings-form]")?.addEventListener(
       "submit",
@@ -412,6 +440,7 @@ export class DiscoveryView {
 
   private snapshot(): WorkspaceSnapshot {
     return {
+      profiles: this.profiles,
       profile: this.profile,
       discovery: this.discovery,
       problems: this.problems,

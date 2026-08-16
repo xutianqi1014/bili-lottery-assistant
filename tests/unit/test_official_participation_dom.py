@@ -23,11 +23,13 @@ class _Locator:
         count: int = 1,
         on_click=None,
         enabled: bool = True,
+        href: str = "",
     ) -> None:
         self.text = text
         self._count = count
         self.on_click = on_click
         self.enabled = enabled
+        self.href = href
         self.clicks = 0
 
     async def count(self) -> int:
@@ -49,6 +51,12 @@ class _Locator:
 
     async def is_enabled(self) -> bool:
         return self.enabled
+
+    async def is_visible(self) -> bool:
+        return True
+
+    async def get_attribute(self, name: str) -> str | None:
+        return self.href if name == "href" else None
 
     async def scroll_into_view_if_needed(self, *, timeout: int) -> None:
         del timeout
@@ -162,6 +170,86 @@ class _Browser:
         self.page = page
 
     async def open(self, url: str) -> _Page:
+        assert url.startswith("https://www.bilibili.com/opus/")
+        return self.page
+
+
+class _ReservationPage:
+    def __init__(self, label: str = "预约", *, followed: bool = False, liked: bool = False) -> None:
+        self.label = label
+        self.button = _Locator(on_click=self._reserve)
+        self.body = _Locator("预约有奖：周年私皮回")
+        self.button.text = label
+        self.liked = liked
+        self.like_button = _Locator(on_click=self._like)
+        self.author = _Locator(
+            "糯米是个背包",
+            href="https://space.bilibili.com/492426375",
+        )
+        self.profile_page = _ProfilePage(followed=followed)
+
+    def _reserve(self) -> None:
+        self.label = "已预约"
+        self.button.text = self.label
+        self.body.text = "预约成功，已参与抽奖"
+
+    def _like(self) -> None:
+        self.liked = True
+
+    def locator(self, selector: str):
+        if selector in {"button", ".bili-dyn-card-reserve__card button"}:
+            return _Controls([self.button])
+        if selector == "body":
+            return self.body
+        if selector == ACTIVITY_LIKE_SELECTOR:
+            return self.like_button
+        if selector == ACTIVITY_LIKE_ACTIVE_SELECTOR:
+            return _Controls([self.like_button]) if self.liked else _Controls([])
+        if selector in {
+            ".opus-module-author__name",
+            ".bili-dyn-item__author",
+            ".bili-dyn-item__author-name",
+            '.bili-dyn-item__header .bili-dyn-title__text',
+            'a[href*="space.bilibili.com/"]',
+        }:
+            return _Controls([self.author])
+        return _Locator(count=0)
+
+    async def wait_for_selector(self, selector: str, *, timeout: int) -> None:
+        del timeout
+        assert selector == ACTIVITY_LIKE_SELECTOR
+
+    async def wait_for_timeout(self, timeout: int) -> None:
+        del timeout
+
+
+class _ProfilePage:
+    def __init__(self, *, followed: bool = False) -> None:
+        self.followed = followed
+        self.button = _Locator(
+            "已关注" if followed else "关注",
+            on_click=self._follow,
+        )
+
+    def _follow(self) -> None:
+        self.followed = True
+        self.button.text = "已关注"
+
+    def locator(self, selector: str):
+        if selector == ".space-follow-btn":
+            return _Controls([self.button])
+        return _Controls([])
+
+
+class _ReservationBrowser:
+    def __init__(self, page: _ReservationPage) -> None:
+        self.page = page
+        self.opened_urls: list[str] = []
+
+    async def open(self, url: str) -> _ReservationPage:
+        self.opened_urls.append(url)
+        if url.startswith("https://space.bilibili.com/"):
+            return self.page.profile_page
         assert url.startswith("https://www.bilibili.com/opus/")
         return self.page
 
@@ -326,6 +414,108 @@ async def test_dom_transport_marks_expired_panel_without_click() -> None:
     )
     assert result.code == "LOTTERY_EXPIRED"
     assert panel.candidates[0].clicks == 0
+
+
+@pytest.mark.asyncio
+async def test_dom_transport_confirms_reservation_and_does_not_open_lottery_panel():
+    page = _ReservationPage()
+    result = await DomOfficialParticipationTransport(_ReservationBrowser(page)).perform(
+        target_url="https://www.bilibili.com/opus/1221942213171216387",
+        payload={},
+    )
+
+    assert result.state is OfficialParticipationOutcomeState.SUCCESS
+    assert result.code == "RESERVATION_CONFIRMED"
+    assert page.button.clicks == 1
+    assert page.like_button.clicks == 1
+    assert page.profile_page.button.clicks == 1
+
+
+@pytest.mark.asyncio
+async def test_dom_transport_processes_already_reserved_unliked_dynamic_and_marks_like():
+    page = _ReservationPage(label="已预约")
+    result = await DomOfficialParticipationTransport(_ReservationBrowser(page)).perform(
+        target_url="https://www.bilibili.com/opus/1221942213171216387",
+        payload={},
+    )
+
+    assert result.state is OfficialParticipationOutcomeState.SUCCESS
+    assert result.code == "RESERVATION_CONFIRMED"
+    assert page.button.clicks == 0
+    assert page.like_button.clicks == 1
+
+
+@pytest.mark.asyncio
+async def test_dom_transport_skips_liked_reservation_without_any_write():
+    page = _ReservationPage(liked=True)
+    result = await DomOfficialParticipationTransport(_ReservationBrowser(page)).perform(
+        target_url="https://www.bilibili.com/opus/1221942213171216387",
+        payload={},
+    )
+
+    assert result.state is OfficialParticipationOutcomeState.ALREADY_PARTICIPATED
+    assert result.code == "ALREADY_PARTICIPATED_LIKED"
+    assert page.button.clicks == 0
+    assert page.like_button.clicks == 0
+    assert page.profile_page.button.clicks == 0
+
+
+@pytest.mark.asyncio
+async def test_dom_transport_marks_ended_reservation_card_without_writes():
+    page = _ReservationPage(label="已结束")
+    result = await DomOfficialParticipationTransport(_ReservationBrowser(page)).perform(
+        target_url="https://www.bilibili.com/opus/1236314913256767520",
+        payload={},
+    )
+
+    assert result.state is OfficialParticipationOutcomeState.EXPIRED
+    assert result.code == "RESERVATION_EXPIRED"
+    assert page.button.clicks == 0
+    assert page.like_button.clicks == 0
+    assert page.profile_page.button.clicks == 0
+
+
+@pytest.mark.asyncio
+async def test_dom_transport_skips_watch_only_reservation_card_without_writes():
+    page = _ReservationPage(label="去观看")
+    result = await DomOfficialParticipationTransport(_ReservationBrowser(page)).perform(
+        target_url="https://www.bilibili.com/opus/1236223920055517329",
+        payload={},
+    )
+
+    assert result.state is OfficialParticipationOutcomeState.EXPIRED
+    assert result.code == "RESERVATION_WATCH_ONLY_SKIPPED"
+    assert page.button.clicks == 0
+    assert page.like_button.clicks == 0
+    assert page.profile_page.button.clicks == 0
+
+
+@pytest.mark.asyncio
+async def test_dom_transport_skips_reservation_that_expires_after_click():
+    class ExpiredAfterClickPage(_ReservationPage):
+        def __init__(self) -> None:
+            super().__init__()
+            self.alert = ""
+
+        def _reserve(self) -> None:
+            self.alert = "预约已过期"
+
+        def locator(self, selector: str):
+            if selector == '[role="alert"]':
+                return _Locator(self.alert, count=1 if self.alert else 0)
+            return super().locator(selector)
+
+    page = ExpiredAfterClickPage()
+    result = await DomOfficialParticipationTransport(_ReservationBrowser(page)).perform(
+        target_url="https://www.bilibili.com/opus/1235086118820511764",
+        payload={},
+    )
+
+    assert result.state is OfficialParticipationOutcomeState.EXPIRED
+    assert result.code == "RESERVATION_EXPIRED"
+    assert page.button.clicks == 1
+    assert page.like_button.clicks == 0
+    assert page.profile_page.button.clicks == 0
 
 
 def test_draw_time_field_wins_over_explicit_expiry_copy() -> None:

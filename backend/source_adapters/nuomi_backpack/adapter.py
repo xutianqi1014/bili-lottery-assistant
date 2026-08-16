@@ -1,0 +1,60 @@
+"""Source adapter for 糯米是个背包's year-organised lottery columns."""
+
+from backend.db.models.source import SourceProfile
+from backend.domain.entities import ReadlistCandidate, SourceArticleCandidate
+from backend.domain.enums import SourceFamily
+from backend.domain.ports import BrowserGateway
+from backend.source_adapters.lottery_toolman.adapter import LotteryToolmanSourceAdapter
+from backend.source_adapters.lottery_toolman.discover_entries import (
+    discover_entries_api,
+)
+from backend.source_adapters.lottery_toolman.discover_readlists import (
+    discover_year_readlist_api,
+)
+from backend.source_adapters.lottery_toolman.title_rules import select_latest_entries
+
+
+class NuomiBackpackSourceAdapter(LotteryToolmanSourceAdapter):
+    """Read the newest year collection and its newest three articles.
+
+    The selected collection contains a mixed queue of interactive and reserve
+    lottery dynamics.  It is stored under the official execution family so
+    the confirmed-run automation can handle both types without routing a
+    reserve card into the comment/repost flow.
+    """
+
+    key = "nuomi_backpack_v1"
+
+    async def discover_readlists(
+        self, profile: SourceProfile, browser: BrowserGateway | None
+    ) -> list[ReadlistCandidate]:
+        del browser
+        return await discover_year_readlist_api(profile.mid, self.settings.request_timeout_sec)
+
+    async def discover_entries(
+        self,
+        readlist: ReadlistCandidate,
+        limit: int,
+        browser: BrowserGateway | None,
+    ) -> list[SourceArticleCandidate]:
+        del browser
+        entries = await discover_entries_api(readlist, self.settings.request_timeout_sec)
+        return select_latest_entries(entries, limit)
+
+    @staticmethod
+    def select_readlists(
+        candidates: list[ReadlistCandidate],
+    ) -> dict[SourceFamily, ReadlistCandidate]:
+        """Return the one year collection selected by ``discover_readlists``."""
+
+        if not candidates:
+            raise ValueError("READLIST_YEAR_NOT_FOUND")
+        selected = max(
+            candidates,
+            key=lambda candidate: (
+                candidate.suffix_value,
+                candidate.observed_updated_at or -1,
+                candidate.rl_id,
+            ),
+        )
+        return {SourceFamily.OFFICIAL: selected}

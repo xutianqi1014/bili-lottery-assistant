@@ -26,6 +26,85 @@ def test_classifies_official_iframe_signal():
     assert result.confidence == "high"
 
 
+def test_classifies_reservation_control_as_distinct_official_automation_type():
+    result = ActivityClassifier().classify(
+        ActivitySnapshot(
+            "1221942213171216387",
+            "https://www.bilibili.com/opus/1221942213171216387",
+            "直播预约：周年私皮回",
+            has_reservation_entry=True,
+            reservation_control_text="预约",
+        )
+    )
+
+    assert result.mode is ActivityMode.RESERVATION
+    assert result.is_participated is False
+    assert result.evidence_codes == (
+        "RESERVATION_ENTRY",
+        "RESERVATION_ACTIVITY_UNLIKED_MARKER",
+        "RESERVATION_UNBOOKED",
+    )
+
+
+@pytest.mark.asyncio
+async def test_reservation_flow_does_not_use_reservation_button_as_participation_marker():
+    snapshot = ActivitySnapshot(
+        "1221942213171216387",
+        "https://www.bilibili.com/opus/1221942213171216387",
+        "直播预约：周年私皮回",
+        has_reservation_entry=True,
+        reservation_active=True,
+        reservation_control_text="已预约",
+    )
+
+    result = await OfficialFlow(ManualGate(True)).prepare(
+        snapshot,
+        ActivityClassifier().classify(snapshot),
+    )
+
+    assert result.state is ActionState.WAITING_USER
+    assert result.code == "MANUAL_GATE_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_reservation_flow_skips_when_dynamic_like_is_active():
+    snapshot = ActivitySnapshot(
+        "1221942213171216387",
+        "https://www.bilibili.com/opus/1221942213171216387",
+        "直播预约：周年私皮回",
+        has_reservation_entry=True,
+        reservation_active=False,
+        activity_like_active=True,
+    )
+
+    result = await OfficialFlow(ManualGate(True)).prepare(
+        snapshot,
+        ActivityClassifier().classify(snapshot),
+    )
+
+    assert result.state is ActionState.ALREADY_LIKED_SKIPPED
+    assert result.code == "ALREADY_PARTICIPATED_LIKED"
+
+
+@pytest.mark.asyncio
+async def test_reservation_flow_skips_watch_only_card_without_writes():
+    snapshot = ActivitySnapshot(
+        "1236223920055517329",
+        "https://www.bilibili.com/opus/1236223920055517329",
+        "预约有奖：直播回放",
+        has_reservation_entry=True,
+        reservation_control_text="去观看",
+    )
+
+    result = await OfficialFlow(ManualGate(True)).prepare(
+        snapshot,
+        ActivityClassifier().classify(snapshot),
+    )
+
+    assert result.state is ActionState.EXPIRED
+    assert result.code == "RESERVATION_WATCH_ONLY_SKIPPED"
+
+
 def test_missing_official_entry_falls_back_to_unofficial():
     result = ActivityClassifier().classify(
         ActivitySnapshot("1", "https://www.bilibili.com/opus/1", "")

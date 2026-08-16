@@ -19,12 +19,37 @@ class OfficialFlow:
         snapshot: ActivitySnapshot,
         classification: ActivityClassification,
     ) -> ActionResult:
-        if classification.mode is not ActivityMode.OFFICIAL:
+        if classification.mode not in {
+            ActivityMode.OFFICIAL,
+            ActivityMode.RESERVATION,
+        }:
             return ActionResult(
                 ActionState.MODE_MISMATCH,
                 "MODE_MISMATCH",
-                "来源预期官方流程，但目标动态未被稳定识别为官方抽奖。",
+                "来源预期官方或预约流程，但目标动态未被稳定识别。",
                 True,
+            )
+        if classification.mode is ActivityMode.RESERVATION:
+            if snapshot.activity_like_active:
+                return ActionResult(
+                    ActionState.ALREADY_LIKED_SKIPPED,
+                    "ALREADY_PARTICIPATED_LIKED",
+                    "预约抽奖动态已经点赞，按动态点赞参与标记跳过。",
+                )
+            if snapshot.reservation_control_text == "去观看":
+                return ActionResult(
+                    ActionState.EXPIRED,
+                    "RESERVATION_WATCH_ONLY_SKIPPED",
+                    "预约卡片显示“去观看”，当前不可预约，跳过本条。",
+                )
+            if snapshot.expired_text:
+                return ActionResult(
+                    ActionState.EXPIRED,
+                    "RESERVATION_EXPIRED",
+                    "预约抽奖页面已明确显示活动结束。",
+                )
+            return self.gate.waiting(
+                "预约抽奖已识别且动态未点赞，等待执行预约、点赞并确认作者关注终态。"
             )
         if snapshot.activity_like_active:
             return ActionResult(

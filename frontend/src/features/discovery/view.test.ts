@@ -18,6 +18,7 @@ class FakeRoot {
 const profile = {
   id: 1,
   sourceKey: "bilibili:100680137",
+  displayName: "你的抽奖工具人",
   platform: "bilibili",
   mid: "100680137",
   uploadUrl: "https://space.bilibili.com/100680137/upload/opus",
@@ -29,6 +30,7 @@ const profile = {
 
 const discovery = {
   id: 7,
+  profileId: 1,
   state: "preview_ready",
   runPlanId: null as number | null,
   selectedReadlists: [],
@@ -151,6 +153,37 @@ describe("DiscoveryView no-preflight workflow", () => {
     expect(root.innerHTML).not.toContain("开始活动只读预检");
     expect(root.innerHTML).not.toContain("data-preflight");
     expect("createRunPlan" in api).toBe(false);
+  });
+
+  it("shows the built-in source picker when more than one source is enabled", () => {
+    const root = new FakeRoot();
+    const view = new DiscoveryView(root as unknown as HTMLElement);
+    const internal = view as unknown as {
+      profiles: typeof profile[];
+      profile: typeof profile;
+      discovery: typeof discovery | null;
+      problems: never[];
+    };
+    internal.profiles = [
+      profile,
+      {
+        ...profile,
+        id: 2,
+        sourceKey: "nuomi_backpack",
+        displayName: "糯米是个背包",
+        mid: "492426375",
+        latestPerFamily: 3,
+      },
+    ];
+    internal.profile = internal.profiles[1];
+    internal.discovery = null;
+    internal.problems = [];
+
+    showPage(view, "overview");
+    view.render();
+
+    expect(root.innerHTML).toContain("data-source-profile");
+    expect(root.innerHTML).toContain("糯米是个背包");
   });
 
   it("loads the automatically linked plan while refreshing discovery", async () => {
@@ -302,6 +335,31 @@ describe("DiscoveryView no-preflight workflow", () => {
     expect(root.innerHTML).not.toContain("官方自动执行清单");
     expect(root.innerHTML).not.toContain("继续下一条／重新检查当前条目");
     expect(root.innerHTML).not.toContain("data-official-authorize");
+  });
+
+  it("keeps a runtime reservation classification separate in the plan table", () => {
+    vi.spyOn(api, "health").mockResolvedValue({ ok: true, browserReady: false });
+    const root = new FakeRoot();
+    const view = new DiscoveryView(root as unknown as HTMLElement);
+    const internal = view as unknown as {
+      profile: typeof profile;
+      discovery: typeof discovery;
+      problems: never[];
+      plan: typeof officialWaitingPlan;
+    };
+    internal.profile = profile;
+    internal.discovery = discovery;
+    internal.problems = [];
+    internal.plan = {
+      ...officialWaitingPlan,
+      items: officialWaitingPlan.items.map((item) => ({ ...item, mode: "reservation" })),
+    };
+
+    showPage(view, "execution");
+    view.render();
+
+    expect(root.innerHTML).toContain('<span class="family-label">预约</span>');
+    expect(root.innerHTML).not.toContain('<span class="family-label">官方 /');
   });
 
   it("merges confirmation and start into one primary action", () => {

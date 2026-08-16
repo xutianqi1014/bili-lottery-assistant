@@ -16,17 +16,7 @@ def source_profiles(request: Request) -> list[dict[str, Any]]:
     with Session(state.engine) as session:
         rows = list_profiles(session)
     return [
-        {
-            "id": row.id,
-            "sourceKey": row.source_key,
-            "platform": row.platform,
-            "mid": row.mid,
-            "uploadUrl": row.upload_url,
-            "adapterKey": row.adapter_key,
-            "enabled": row.enabled,
-            "latestPerFamily": row.latest_per_family,
-            "lastDiscoveryAt": row.last_discovery_at.isoformat() if row.last_discovery_at else None,
-        }
+        _serialize_profile(row)
         for row in rows
     ]
 
@@ -38,13 +28,32 @@ def source_profile(profile_id: int, request: Request) -> dict[str, Any]:
         row = get_profile(session, profile_id)
     if row is None:
         raise HTTPException(status_code=404, detail="SOURCE_PROFILE_NOT_FOUND")
+    return {**_serialize_profile(row), "config": json.loads(row.config_json)}
+
+
+def _serialize_profile(row: Any) -> dict[str, Any]:
+    try:
+        config = json.loads(row.config_json)
+    except json.JSONDecodeError:
+        config = {}
+    if not isinstance(config, dict):
+        config = {}
     return {
         "id": row.id,
         "sourceKey": row.source_key,
+        "displayName": str(config.get("displayName") or row.source_key),
+        "platform": row.platform,
         "mid": row.mid,
         "uploadUrl": row.upload_url,
         "adapterKey": row.adapter_key,
-        "config": json.loads(row.config_json),
+        "enabled": row.enabled,
+        "latestPerFamily": row.latest_per_family,
+        "activityTypes": [
+            value
+            for value in config.get("activityTypes", [])
+            if isinstance(value, str)
+        ],
+        "lastDiscoveryAt": row.last_discovery_at.isoformat() if row.last_discovery_at else None,
     }
 
 
