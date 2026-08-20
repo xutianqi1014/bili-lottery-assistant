@@ -45,6 +45,7 @@ _RESERVATION_BUTTON_SELECTOR = ".bili-dyn-card-reserve__card button"
 _RESERVATION_MARKER_SELECTOR = ".bili-dyn-card-reserve__lottery__text"
 _PARTICIPATED_RE = re.compile(r"已成功参与|成功参与|已转发|转发成功|已参与|参与成功|您已参加")
 _LOTTERY_ENTRY_SELECTOR = 'a[data-type="lottery"]'
+_FORWARDED_ORIGINAL_SELECTOR = ".bili-dyn-content__orig.reference"
 _LOTTERY_IFRAME_SELECTOR = 'iframe[src*="/h5/lottery/result"]'
 _LOTTERY_DIALOG_SELECTORS = (
     'div[role="dialog"]',
@@ -161,9 +162,36 @@ class RuntimeActivityReader:
 
         unofficial_evidence = await read_unofficial_page_evidence(page)
         reservation = await self._read_reservation_control(page, body_text)
-        has_official_entry = await self._has_locator(page, _LOTTERY_ENTRY_SELECTOR)
-        if not has_official_entry:
+        # A boosted dynamic can contain the original dynamic's official
+        # lottery link inside `.bili-dyn-content__orig.reference`.  That
+        # nested link belongs to the quoted original, not to the current
+        # outer dynamic.  Counting entries outside that forwarded-original
+        # subtree prevents the outer item from being reclassified as an
+        # official target (which would later fail the confirmed-run scope
+        # check and could select the wrong writer).
+        total_lottery_entries = await self._locator_count(page, _LOTTERY_ENTRY_SELECTOR)
+        nested_lottery_entries = (
+            await self._locator_count(
+                page,
+                f"{_FORWARDED_ORIGINAL_SELECTOR} {_LOTTERY_ENTRY_SELECTOR}",
+            )
+            if unofficial_evidence.has_forwarded_original
+            else 0
+        )
+        has_official_entry = total_lottery_entries > (
+            nested_lottery_entries if unofficial_evidence.has_forwarded_original else 0
+        )
+        nested_official_entry_ignored = bool(
+            unofficial_evidence.has_forwarded_original
+            and nested_lottery_entries > 0
+            and nested_lottery_entries >= total_lottery_entries
+        )
+        if not has_official_entry and not unofficial_evidence.has_forwarded_original:
             has_official_entry = bool(re.search(r'data-type=["\']lottery["\']', html))
+
+        nonofficial_evidence_codes = list(unofficial_evidence.evidence_codes)
+        if nested_official_entry_ignored:
+            nonofficial_evidence_codes.append("BOOSTED_NESTED_OFFICIAL_ENTRY_IGNORED")
 
         lottery_panel = _LotteryPanelRead()
         if has_official_entry and not activity_like_active:
@@ -210,7 +238,7 @@ class RuntimeActivityReader:
                 actionable_text=actionable_text,
                 forwarded_original_text=unofficial_evidence.forwarded_original_text,
                 has_forwarded_original=unofficial_evidence.has_forwarded_original,
-                nonofficial_dom_evidence=unofficial_evidence.evidence_codes,
+                nonofficial_dom_evidence=tuple(dict.fromkeys(nonofficial_evidence_codes)),
             ),
             body_excerpt=visible_text[:2000],
             page_title=_clean_text(title),
@@ -238,7 +266,7 @@ class RuntimeActivityReader:
                 unofficial_evidence.comment_repost_control_present
             ),
             nonofficial_author_name=unofficial_evidence.author_name,
-            nonofficial_evidence_codes=unofficial_evidence.evidence_codes,
+            nonofficial_evidence_codes=tuple(dict.fromkeys(nonofficial_evidence_codes)),
         )
 
     @classmethod
@@ -422,6 +450,18 @@ class RuntimeActivityReader:
             return bool(await count()) if callable(count) else False
         except Exception:
             return False
+
+    @staticmethod
+    async def _locator_count(page: object, selector: str) -> int:
+        locator_factory = getattr(page, "locator", None)
+        if not callable(locator_factory):
+            return 0
+        try:
+            locator = locator_factory(selector)
+            count = getattr(locator, "count", None)
+            return int(await count()) if callable(count) else 0
+        except Exception:
+            return 0
 
     @classmethod
     async def _read_reservation_control(
