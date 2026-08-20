@@ -2,7 +2,7 @@
 
 本项目是一个本机运行的 B 站互动抽奖助手，使用 HTML 控制台操作，浏览器端通过 Playwright 执行页面可见的读写动作。
 
-当前版本：`0.1.2`
+当前版本：`0.1.3`
 
 当前内置来源：
 
@@ -18,9 +18,9 @@
 
 Windows 用户建议直接从 GitHub Release 下载：
 
-<https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.2>
+<https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.3>
 
-下载并解压 `BiliLotteryAssistant-windows-x64-v0.1.2.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
+下载并解压 `BiliLotteryAssistant-windows-x64-v0.1.3.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
 
 <http://127.0.0.1:8787/>
 
@@ -54,7 +54,8 @@ python -m backend.launcher
 ## 当前边界
 
 - 当前内置两个 UP 来源；每个 UP 使用独立适配器，后续新增 UP 仍需单独配置其合集结构和适配器。
-- `nuomi_backpack_v1` 选择名称为四位年份的最大合集（当前发现到 `2026`，readlist `rl1016769`），从中取序号最大的 3 篇专栏。该合集中的互动抽奖按官方流程执行；正文出现“预约有奖”卡片的动态按独立预约流程执行，“已结束”按钮仅表示预约卡片终态。
+- `nuomi_backpack_v1` 选择名称为四位年份的最大合集（当前发现到 `2026`，readlist `rl1016769`），从中取序号最大的 3 篇专栏。该合集中的互动抽奖按官方流程执行；正文出现“预约有奖”卡片的动态按独立预约流程执行；直播已撤销导致卡片只显示“已撤销”时也会安全跳过。
+- 加码动态若只在引用原动态中出现官方抽奖入口，会按外层动态进入非官方加码流程，不会误打开内层互动抽奖面板。
 - 只读发现阶段不会打开候选动态；正式执行时才读取动态页面状态。
 - 官方互动抽奖和非官方互动抽奖均默认自动执行，但遇到登录、验证码、风控、控件不唯一或终态未知时会立即停止当前条目，并记录问题网址，不自动重试。
 - DeepSeek Key 仅保存在当前本地服务进程内，不写入运行计划、SQLite 或日志；关闭服务后需要重新输入。

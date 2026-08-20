@@ -123,6 +123,42 @@ class _Browser:
         return self.page
 
 
+class _BoostedForwardPage(_Page):
+    """A boosted outer dynamic whose quoted original exposes a lottery link."""
+
+    url = "https://t.bilibili.com/1238160555189993490"
+
+    async def content(self) -> str:
+        return (
+            '<div class="bili-dyn-content__forw__desc" data-orig="0">'
+            "转发并关注，完成评论后加码奖励"
+            "</div>"
+            '<div class="bili-dyn-content__orig reference" data-orig="1">'
+            '<a data-type="lottery" href="#">内层互动抽奖</a>'
+            "</div>"
+        )
+
+    def locator(self, selector: str) -> _Locator:
+        if selector == "body":
+            return _Locator(1, "转发并关注，完成评论后加码奖励 内层互动抽奖")
+        if selector == '.bili-dyn-content__forw__desc[data-orig="0"]':
+            return _Locator(1, "转发并关注，完成评论后加码奖励")
+        if selector == ".bili-dyn-content__orig.reference":
+            return _Locator(1, "内层互动抽奖")
+        if selector == '.bili-dyn-content__orig.reference a[data-type="lottery"]':
+            return _Locator(1)
+        if selector == 'a[data-type="lottery"]':
+            return _Locator(1, on_click=lambda: setattr(self, "clicked", True))
+        return _Locator(0)
+
+
+class _BoostedForwardBrowser(_Browser):
+    async def open(self, url: str) -> _BoostedForwardPage:
+        del url
+        self.page = _BoostedForwardPage()
+        return self.page
+
+
 class _ReservationLocator:
     def __init__(
         self,
@@ -194,6 +230,26 @@ async def test_reader_and_shared_classifier_are_single_item_read_only():
     assert result.snapshot.already_participated_text is True
     assert requirements.required_topics == ("#抽奖#",)
     assert requirements.required_mention_count == 2
+
+
+@pytest.mark.asyncio
+async def test_reader_ignores_nested_official_entry_in_boosted_outer_dynamic():
+    browser = _BoostedForwardBrowser()
+
+    result = await RuntimeActivityReader().read(
+        browser,
+        "1238160555189993490",
+        "https://t.bilibili.com/1238160555189993490",
+    )
+    classification = ActivityClassifier().classify(result.snapshot)
+
+    assert classification.mode.value == "unofficial"
+    assert classification.unofficial_type.value == "boosted"
+    assert result.snapshot.has_forwarded_original is True
+    assert result.snapshot.has_official_lottery_entry is False
+    assert result.lottery_entry_opened is False
+    assert browser.page is not None and browser.page.clicked is False
+    assert "BOOSTED_NESTED_OFFICIAL_ENTRY_IGNORED" in result.snapshot.nonofficial_dom_evidence
 
 
 @pytest.mark.asyncio
@@ -503,6 +559,37 @@ async def test_reader_treats_expired_reservation_button_as_terminal() -> None:
 
     assert result.snapshot.has_reservation_entry is True
     assert result.snapshot.reservation_control_text == "预约已过期"
+    assert result.snapshot.expired_text is True
+
+
+@pytest.mark.asyncio
+async def test_reader_detects_revoked_live_reservation_without_prize_marker() -> None:
+    class RevokedReservationPage(_ReservationPage):
+        url = "https://www.bilibili.com/opus/1237497060024909832"
+        reservation_label = "已撤销"
+        body_text = "直播预约：试胆大会 明天 05:00 直播 已撤销"
+
+        async def content(self) -> str:
+            return (
+                "<main>直播预约：试胆大会 明天 05:00 直播 "
+                "<div class='bili-dyn-card-reserve__card'><button>已撤销</button>"
+                "</div></main>"
+            )
+
+    class RevokedReservationBrowser:
+        async def open(self, url: str) -> RevokedReservationPage:
+            del url
+            return RevokedReservationPage()
+
+    result = await RuntimeActivityReader().read(
+        RevokedReservationBrowser(),
+        "1237497060024909832",
+        "https://www.bilibili.com/opus/1237497060024909832",
+    )
+
+    assert result.snapshot.has_official_lottery_entry is False
+    assert result.snapshot.has_reservation_entry is True
+    assert result.snapshot.reservation_control_text == "已撤销"
     assert result.snapshot.expired_text is True
 
 

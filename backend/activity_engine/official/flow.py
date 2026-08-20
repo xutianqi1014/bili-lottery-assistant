@@ -46,7 +46,7 @@ class OfficialFlow:
                 return ActionResult(
                     ActionState.EXPIRED,
                     "RESERVATION_EXPIRED",
-                    "预约抽奖页面已明确显示活动结束。",
+                    "预约抽奖页面显示活动已结束、过期或已撤销。",
                 )
             return self.gate.waiting(
                 "预约抽奖已识别且动态未点赞，等待执行预约、点赞并确认作者关注终态。"

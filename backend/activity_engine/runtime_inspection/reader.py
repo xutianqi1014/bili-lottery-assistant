@@ -36,15 +36,21 @@ _UNAVAILABLE_ERROR_SHELL_RE = re.compile(r"返回上一页\s*换一张", re.IGNO
 _COUNTDOWN_RE = re.compile(r"开奖倒计时|距离开奖|倒计时")
 _DRAW_TIME_RE = re.compile(r"开奖时间\s*[:：]?")
 _RESERVATION_CONTROL_RE = re.compile(r"^(?:预约|已预约)$")
-# 预约抽奖的唯一分类信号是预约卡片中的“预约有奖”文案。按钮变成
+# 预约抽奖的主要分类信号是预约卡片中的“预约有奖”文案。按钮变成
 # “已结束”或“去观看”只表示该卡片不可执行，不单独把普通动态分类成预约。
+# B站对已撤销的直播预约会移除“预约有奖”文案，但仍保留预约卡片和
+# “已撤销”按钮；该组合是一个独立的、可安全跳过的预约终态信号。
 _RESERVATION_CARD_RE = re.compile(r"预约\s*有奖")
-_RESERVATION_TERMINAL_RE = re.compile(r"^(?:已结束|预约已结束|预约已过期|已取消)$")
+_RESERVATION_TERMINAL_RE = re.compile(
+    r"^(?:已结束|预约已结束|预约已过期|已取消|已撤销)$"
+)
+_RESERVATION_REVOKED_RE = re.compile(r"^已撤销$")
 _RESERVATION_WATCH_ONLY_RE = re.compile(r"^去观看$")
 _RESERVATION_BUTTON_SELECTOR = ".bili-dyn-card-reserve__card button"
 _RESERVATION_MARKER_SELECTOR = ".bili-dyn-card-reserve__lottery__text"
 _PARTICIPATED_RE = re.compile(r"已成功参与|成功参与|已转发|转发成功|已参与|参与成功|您已参加")
 _LOTTERY_ENTRY_SELECTOR = 'a[data-type="lottery"]'
+_FORWARDED_ORIGINAL_SELECTOR = ".bili-dyn-content__orig.reference"
 _LOTTERY_IFRAME_SELECTOR = 'iframe[src*="/h5/lottery/result"]'
 _LOTTERY_DIALOG_SELECTORS = (
     'div[role="dialog"]',
@@ -161,9 +167,36 @@ class RuntimeActivityReader:
 
         unofficial_evidence = await read_unofficial_page_evidence(page)
         reservation = await self._read_reservation_control(page, body_text)
-        has_official_entry = await self._has_locator(page, _LOTTERY_ENTRY_SELECTOR)
-        if not has_official_entry:
+        # A boosted dynamic can contain the original dynamic's official
+        # lottery link inside `.bili-dyn-content__orig.reference`.  That
+        # nested link belongs to the quoted original, not to the current
+        # outer dynamic.  Counting entries outside that forwarded-original
+        # subtree prevents the outer item from being reclassified as an
+        # official target (which would later fail the confirmed-run scope
+        # check and could select the wrong writer).
+        total_lottery_entries = await self._locator_count(page, _LOTTERY_ENTRY_SELECTOR)
+        nested_lottery_entries = (
+            await self._locator_count(
+                page,
+                f"{_FORWARDED_ORIGINAL_SELECTOR} {_LOTTERY_ENTRY_SELECTOR}",
+            )
+            if unofficial_evidence.has_forwarded_original
+            else 0
+        )
+        has_official_entry = total_lottery_entries > (
+            nested_lottery_entries if unofficial_evidence.has_forwarded_original else 0
+        )
+        nested_official_entry_ignored = bool(
+            unofficial_evidence.has_forwarded_original
+            and nested_lottery_entries > 0
+            and nested_lottery_entries >= total_lottery_entries
+        )
+        if not has_official_entry and not unofficial_evidence.has_forwarded_original:
             has_official_entry = bool(re.search(r'data-type=["\']lottery["\']', html))
+
+        nonofficial_evidence_codes = list(unofficial_evidence.evidence_codes)
+        if nested_official_entry_ignored:
+            nonofficial_evidence_codes.append("BOOSTED_NESTED_OFFICIAL_ENTRY_IGNORED")
 
         lottery_panel = _LotteryPanelRead()
         if has_official_entry and not activity_like_active:
@@ -210,7 +243,7 @@ class RuntimeActivityReader:
                 actionable_text=actionable_text,
                 forwarded_original_text=unofficial_evidence.forwarded_original_text,
                 has_forwarded_original=unofficial_evidence.has_forwarded_original,
-                nonofficial_dom_evidence=unofficial_evidence.evidence_codes,
+                nonofficial_dom_evidence=tuple(dict.fromkeys(nonofficial_evidence_codes)),
             ),
             body_excerpt=visible_text[:2000],
             page_title=_clean_text(title),
@@ -238,7 +271,7 @@ class RuntimeActivityReader:
                 unofficial_evidence.comment_repost_control_present
             ),
             nonofficial_author_name=unofficial_evidence.author_name,
-            nonofficial_evidence_codes=unofficial_evidence.evidence_codes,
+            nonofficial_evidence_codes=tuple(dict.fromkeys(nonofficial_evidence_codes)),
         )
 
     @classmethod
@@ -423,6 +456,18 @@ class RuntimeActivityReader:
         except Exception:
             return False
 
+    @staticmethod
+    async def _locator_count(page: object, selector: str) -> int:
+        locator_factory = getattr(page, "locator", None)
+        if not callable(locator_factory):
+            return 0
+        try:
+            locator = locator_factory(selector)
+            count = getattr(locator, "count", None)
+            return int(await count()) if callable(count) else 0
+        except Exception:
+            return 0
+
     @classmethod
     async def _read_reservation_control(
         cls, page: object, body_text: str = ""
@@ -432,21 +477,24 @@ class RuntimeActivityReader:
         The button labels ``已结束`` and ``去观看`` are only terminal states.
         They are accepted here only after the page has independently exposed
         the exact ``预约有奖`` card marker; neither is a reservation
-        classifier signal on its own.
+        classifier signal on its own.  ``已撤销`` is the exception: B站
+        removes the prize marker for revoked live streams, so the exact
+        label is accepted only from the scoped reservation-card button.
         """
 
         locator_factory = getattr(page, "locator", None)
         if not callable(locator_factory):
             return _ReservationControlRead()
         has_card_marker = await cls._has_reservation_card_marker(page, body_text)
-        # A button label alone is never enough.  Only the reserve card that
-        # carries the exact “预约有奖” marker may expose reservation controls.
-        if not has_card_marker:
-            return _ReservationControlRead()
         for attempt in range(_RESERVATION_WAIT_ATTEMPTS):
             try:
                 controls = locator_factory(_RESERVATION_BUTTON_SELECTOR)
                 total = int(await controls.count())
+                if total == 0 and not has_card_marker:
+                    # Avoid adding the reservation hydration wait to ordinary
+                    # dynamics that have neither a prize marker nor a scoped
+                    # reservation-card control.
+                    return _ReservationControlRead()
                 labels: list[str] = []
                 terminal_labels: list[str] = []
                 nth = getattr(controls, "nth", None)
@@ -464,11 +512,14 @@ class RuntimeActivityReader:
                     if not callable(inner_text):
                         continue
                     label = _clean_text(str(await inner_text(timeout=1_000)))
-                    if _RESERVATION_CONTROL_RE.fullmatch(label):
+                    if has_card_marker and _RESERVATION_CONTROL_RE.fullmatch(label):
                         labels.append(label)
-                    elif has_card_marker and (
-                        _RESERVATION_TERMINAL_RE.fullmatch(label)
-                        or _RESERVATION_WATCH_ONLY_RE.fullmatch(label)
+                    elif _RESERVATION_REVOKED_RE.fullmatch(label) or (
+                        has_card_marker
+                        and (
+                            _RESERVATION_TERMINAL_RE.fullmatch(label)
+                            or _RESERVATION_WATCH_ONLY_RE.fullmatch(label)
+                        )
                     ):
                         terminal_labels.append(label)
                 if labels:
@@ -481,7 +532,7 @@ class RuntimeActivityReader:
                         active=active > 0 and unbooked == 0,
                         text="、".join(dict.fromkeys(labels)),
                     )
-                if has_card_marker:
+                if has_card_marker or terminal_labels:
                     if len(terminal_labels) == 1:
                         return _ReservationControlRead(
                             present=True,

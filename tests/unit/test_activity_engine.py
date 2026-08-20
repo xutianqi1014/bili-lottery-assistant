@@ -105,6 +105,26 @@ async def test_reservation_flow_skips_watch_only_card_without_writes():
     assert result.code == "RESERVATION_WATCH_ONLY_SKIPPED"
 
 
+@pytest.mark.asyncio
+async def test_reservation_flow_skips_revoked_live_without_writes():
+    snapshot = ActivitySnapshot(
+        "1237497060024909832",
+        "https://www.bilibili.com/opus/1237497060024909832",
+        "直播预约：试胆大会 已撤销",
+        has_reservation_entry=True,
+        reservation_control_text="已撤销",
+        expired_text=True,
+    )
+
+    result = await OfficialFlow(ManualGate(True)).prepare(
+        snapshot,
+        ActivityClassifier().classify(snapshot),
+    )
+
+    assert result.state is ActionState.EXPIRED
+    assert result.code == "RESERVATION_EXPIRED"
+
+
 def test_missing_official_entry_falls_back_to_unofficial():
     result = ActivityClassifier().classify(
         ActivitySnapshot("1", "https://www.bilibili.com/opus/1", "")

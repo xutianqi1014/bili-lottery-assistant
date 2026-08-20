@@ -52,6 +52,9 @@
     normal_body_selector: .opus-module-content
     boosted_outer_selector: .bili-dyn-content__forw__desc[data-orig="0"]
     boosted_original_selector: .bili-dyn-content__orig.reference
+    official_lottery_entry_selector: 'a[data-type="lottery"]'
+    official_lottery_entry_scope: current_outer_dynamic_only
+    nested_original_lottery_rule: ignore_entries_inside_boosted_original
     activity_like_selector: .side-toolbar__action.like
     activity_liked_selectors:
       - .side-toolbar__action.like.is-active
