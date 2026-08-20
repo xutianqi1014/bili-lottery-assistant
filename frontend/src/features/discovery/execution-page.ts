@@ -49,13 +49,14 @@ type JumpTarget = {
 };
 
 function jumpTarget(plan: RunPlan): JumpTarget | null {
-  const current = plan.items.find((item) => CURRENT_ITEM_STATES.has(item.state));
+  const orderedItems = [...plan.items].sort((left, right) => left.sequence - right.sequence);
+  const current = orderedItems.find((item) => CURRENT_ITEM_STATES.has(item.state));
   if (current) return { item: current, kind: "current" };
 
-  const pending = plan.items.find((item) => !TERMINAL_ITEM_STATES.has(item.state));
+  const pending = orderedItems.find((item) => !TERMINAL_ITEM_STATES.has(item.state));
   if (pending) return { item: pending, kind: "pending" };
 
-  const lastTerminal = [...plan.items].reverse().find((item) => TERMINAL_ITEM_STATES.has(item.state));
+  const lastTerminal = [...orderedItems].reverse().find((item) => TERMINAL_ITEM_STATES.has(item.state));
   return lastTerminal ? { item: lastTerminal, kind: "last_terminal" } : null;
 }
 
