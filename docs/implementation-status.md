@@ -461,7 +461,7 @@ DOM 写入层同步识别“去观看”，并在控件与其他按钮同时出�
 
 ## 2026-08-20 执行页当前动态定位（本地改进）
 
-第三页“执行与结果”的运行计划新增“跳转到当前动态”按钮。前端优先识别 `running`、`waiting_user`、`blocked_unknown`、`blocked_failed` 条目；处理间隔中没有活动条目时选择第一个非 `completed`/`skipped` 的未处理条目；全部终态后选择最后一个 `completed`/`skipped` 条目。在计划表中为目标条目添加 `data-run-item`、`aria-current` 和高亮样式；按钮点击后仅在本页平滑滚动并聚焦该行，不打开新网页、不调用 B 站写接口。只有计划为空时按钮保持禁用。前端测试 `21 passed`，TypeScript 类型检查和 Vite 生产构建通过。
+第三页“执行与结果”的运行计划新增“跳转到当前动态”按钮。前端优先识别 `running`、`waiting_user`、`blocked_unknown`、`blocked_failed` 条目；处理间隔中没有活动条目时选择第一个非 `completed`/`skipped` 的未处理条目；全部终态后选择最后一个 `completed`/`skipped` 条目。在计划表中为目标条目添加 `data-run-item`、`aria-current` 和高亮样式；按钮点击后仅在本页平滑滚动并聚焦该行，不打开新网页、不调用 B 站写接口。只有计划为空时按钮保持禁用。前端测试 `22 passed`，TypeScript 类型检查和 Vite 生产构建通过。
 
 ## 2026-08-20 加码动态嵌套官方入口隔离（本地改进）
 
