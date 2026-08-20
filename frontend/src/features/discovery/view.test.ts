@@ -300,6 +300,34 @@ describe("DiscoveryView no-preflight workflow", () => {
     expect(root.innerHTML).not.toContain("SOURCE_LIKE_AUTOMATION_CONFIRMED");
   });
 
+  it("renders a jump control and marks the currently processing dynamic", () => {
+    vi.spyOn(api, "health").mockResolvedValue({ ok: true, browserReady: false });
+    const root = new FakeRoot();
+    const view = new DiscoveryView(root as unknown as HTMLElement);
+    const internal = view as unknown as {
+      profile: typeof profile;
+      discovery: typeof discovery;
+      problems: never[];
+      plan: typeof officialWaitingPlan;
+    };
+    internal.profile = profile;
+    internal.discovery = discovery;
+    internal.problems = [];
+    internal.plan = {
+      ...officialWaitingPlan,
+      state: "running",
+      items: officialWaitingPlan.items.map((item) => ({ ...item, state: "running" })),
+    };
+
+    showPage(view, "execution");
+    view.render();
+
+    expect(root.innerHTML).toContain("正在处理第 1 条动态");
+    expect(root.innerHTML).toContain("跳转到当前动态");
+    expect(root.innerHTML).toContain('data-jump-current-dynamic data-target-item="21"');
+    expect(root.innerHTML).toContain('data-run-item="21" class="run-plan-current-item"');
+  });
+
   it("shows one run-level automatic start action when automation is enabled", () => {
     vi.spyOn(api, "health").mockResolvedValue({ ok: true, browserReady: false });
     const root = new FakeRoot();

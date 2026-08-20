@@ -221,6 +221,23 @@ export class DiscoveryView {
     }
   }
 
+  private jumpToCurrentDynamic(): void {
+    const trigger = this.root.querySelector<HTMLButtonElement>("[data-jump-current-dynamic]");
+    const targetId = trigger?.dataset.targetItem;
+    if (!targetId) {
+      this.setMessage("当前没有正在处理的动态");
+      return;
+    }
+    const target = this.root.querySelector<HTMLElement>(`[data-run-item="${targetId}"]`);
+    if (!target) {
+      this.setMessage("当前动态尚未刷新到执行计划，请稍后重试");
+      return;
+    }
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.focus({ preventScroll: true });
+    this.setMessage("已定位到当前处理动态");
+  }
+
   async refreshPlan(id = this.plan?.id): Promise<void> {
     if (!id) return;
     try {
@@ -308,6 +325,10 @@ export class DiscoveryView {
       () => void this.restartRun().catch((error) => {
         this.setMessage(`重新开始失败：${String(error)}`);
       }),
+    );
+    this.root.querySelector<HTMLButtonElement>("[data-jump-current-dynamic]")?.addEventListener(
+      "click",
+      () => this.jumpToCurrentDynamic(),
     );
     this.root.querySelector<HTMLButtonElement>("[data-copy-logs]")?.addEventListener("click", () => void this.copyLogs());
     this.root.querySelector<HTMLButtonElement>("[data-clear-logs]")?.addEventListener("click", () => this.clearLogs());

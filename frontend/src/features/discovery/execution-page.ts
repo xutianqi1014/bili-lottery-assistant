@@ -40,7 +40,21 @@ function renderSourceClosure(stats: Record<string, unknown>): string {
   return `<section class="panel source-closure"><div class="subheading"><div><span class="kicker">SOURCE ARTICLE CLOSURE</span><h3>来源专栏收尾判定</h3></div><div class="closure-counts"><span class="state state-liked">可收尾 ${numberValue(raw, "readyToMarkCount")}</span><span class="state">已点赞 ${numberValue(raw, "alreadyLikedCount")}</span><span class="state state-${numberValue(raw, "blockedCount") > 0 ? "unknown" : "liked"}">阻塞 ${numberValue(raw, "blockedCount")}</span></div></div><p class="status-line">运行结束时只自动点赞零问题且全部相关动态已终态的来源；有问题的来源保持未点赞。</p><div class="table-wrap"><table><thead><tr><th>来源专栏</th><th>判定</th><th>终态活动</th><th>未解决问题</th><th>原因码</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
 }
 
-function renderPlanItem(item: RunItem): string {
+const CURRENT_ITEM_STATES = new Set(["running", "waiting_user", "blocked_unknown", "blocked_failed"]);
+
+function currentProcessingItem(plan: RunPlan): RunItem | null {
+  return plan.items.find((item) => CURRENT_ITEM_STATES.has(item.state)) ?? null;
+}
+
+function renderJumpCurrentButton(plan: RunPlan): string {
+  const current = currentProcessingItem(plan);
+  if (!current) {
+    return `<button type="button" class="secondary" data-jump-current-dynamic disabled title="当前没有正在处理的动态">当前暂无处理动态</button>`;
+  }
+  return `<button type="button" class="secondary" data-jump-current-dynamic data-target-item="${escapeHtml(String(current.activityId))}" title="定位到第${current.sequence}条动态">跳转到当前动态</button>`;
+}
+
+function renderPlanItem(item: RunItem, current: boolean): string {
   const modeLabels: Record<string, string> = {
     official: "官方",
     reservation: "预约",
@@ -50,7 +64,10 @@ function renderPlanItem(item: RunItem): string {
   // family as a provisional label.  Once inspected, reservation remains a
   // first-class label instead of being collapsed into official/unofficial.
   const flow = modeLabels[item.mode] ?? (item.family === "official" ? "官方" : "非官方");
-  return `<tr><td>${item.sequence}</td><td><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.title || item.dynamicId)}</a><small>${escapeHtml(item.dynamicId)}</small></td><td><span class="family-label">${escapeHtml(flow)}</span></td><td>${escapeHtml(item.platformStatus === "unchecked" ? "未检查" : item.platformStatus)}</td><td><span class="state state-${["completed", "skipped"].includes(item.state) ? "liked" : item.state === "planned" ? "unliked" : "unknown"}">${escapeHtml(item.state)}</span></td></tr>`;
+  const currentAttributes = current
+    ? ` class="run-plan-current-item" aria-current="true" tabindex="-1"`
+    : "";
+  return `<tr data-run-item="${escapeHtml(String(item.activityId))}"${currentAttributes}><td>${item.sequence}</td><td><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.title || item.dynamicId)}</a><small>${escapeHtml(item.dynamicId)}</small></td><td><span class="family-label">${escapeHtml(flow)}</span></td><td>${escapeHtml(item.platformStatus === "unchecked" ? "未检查" : item.platformStatus)}</td><td><span class="state state-${["completed", "skipped"].includes(item.state) ? "liked" : item.state === "planned" ? "unliked" : "unknown"}">${escapeHtml(item.state)}</span></td></tr>`;
 }
 
 function renderAction(plan: RunPlan): string {
@@ -93,8 +110,10 @@ function executionPolicy(plan: RunPlan): string {
 function renderPlan(plan: RunPlan): string {
   const stats = plan.stats;
   const blocked = Number(stats.blockedActivities ?? 0);
-  const items = plan.items.map((item) => renderPlanItem(item)).join("");
+  const current = currentProcessingItem(plan);
+  const items = plan.items.map((item) => renderPlanItem(item, item.activityId === current?.activityId)).join("");
   const planSection = `<section class="panel run-plan"><div class="plan-top"><div><span class="kicker">RUN PLAN #${plan.id}</span><h2>本次运行计划</h2><p class="section-description">${escapeHtml(plan.statusDetail ?? "等待读取计划状态。")}</p></div><div class="current-action"><span>当前唯一操作</span>${renderAction(plan)}</div></div>
+    <div class="plan-navigation"><span>${current ? `正在处理第 ${current.sequence} 条动态` : "当前没有正在处理的动态"}</span>${renderJumpCurrentButton(plan)}</div>
     <div class="metric-grid plan-metrics"><div><span>全部动态</span><strong>${stats.totalActivities ?? 0}</strong></div><div><span>计划处理</span><strong>${stats.plannedActivities ?? 0}</strong></div><div><span>跳过</span><strong>${stats.skippedActivities ?? 0}</strong></div><div><span>阻塞</span><strong>${blocked}</strong></div></div>
     <p class="status-line">${executionPolicy(plan)}</p>
     <div class="table-wrap"><table class="run-plan-table"><colgroup><col class="run-plan-col-sequence"><col class="run-plan-col-dynamic"><col class="run-plan-col-family"><col class="run-plan-col-page-state"><col class="run-plan-col-run-state"></colgroup><thead><tr><th>序号</th><th>动态</th><th>流程</th><th>页面状态</th><th>运行状态</th></tr></thead><tbody>${items || `<tr><td colspan="5">计划为空。</td></tr>`}</tbody></table></div>
