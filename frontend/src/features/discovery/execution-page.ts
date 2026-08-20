@@ -41,17 +41,30 @@ function renderSourceClosure(stats: Record<string, unknown>): string {
 }
 
 const CURRENT_ITEM_STATES = new Set(["running", "waiting_user", "blocked_unknown", "blocked_failed"]);
+const TERMINAL_ITEM_STATES = new Set(["completed", "skipped"]);
 
-function currentProcessingItem(plan: RunPlan): RunItem | null {
-  return plan.items.find((item) => CURRENT_ITEM_STATES.has(item.state)) ?? null;
+type JumpTarget = {
+  item: RunItem;
+  kind: "current" | "pending" | "last_terminal";
+};
+
+function jumpTarget(plan: RunPlan): JumpTarget | null {
+  const current = plan.items.find((item) => CURRENT_ITEM_STATES.has(item.state));
+  if (current) return { item: current, kind: "current" };
+
+  const pending = plan.items.find((item) => !TERMINAL_ITEM_STATES.has(item.state));
+  if (pending) return { item: pending, kind: "pending" };
+
+  const lastTerminal = [...plan.items].reverse().find((item) => TERMINAL_ITEM_STATES.has(item.state));
+  return lastTerminal ? { item: lastTerminal, kind: "last_terminal" } : null;
 }
 
 function renderJumpCurrentButton(plan: RunPlan): string {
-  const current = currentProcessingItem(plan);
-  if (!current) {
-    return `<button type="button" class="secondary" data-jump-current-dynamic disabled title="当前没有正在处理的动态">当前暂无处理动态</button>`;
+  const target = jumpTarget(plan);
+  if (!target) {
+    return `<button type="button" class="secondary" data-jump-current-dynamic disabled title="当前没有可定位的动态">暂无可定位动态</button>`;
   }
-  return `<button type="button" class="secondary" data-jump-current-dynamic data-target-item="${escapeHtml(String(current.activityId))}" title="定位到第${current.sequence}条动态">跳转到当前动态</button>`;
+  return `<button type="button" class="secondary" data-jump-current-dynamic data-target-item="${escapeHtml(String(target.item.activityId))}" title="定位到第${target.item.sequence}条动态">跳转到当前动态</button>`;
 }
 
 function renderPlanItem(item: RunItem, current: boolean): string {
@@ -110,10 +123,17 @@ function executionPolicy(plan: RunPlan): string {
 function renderPlan(plan: RunPlan): string {
   const stats = plan.stats;
   const blocked = Number(stats.blockedActivities ?? 0);
-  const current = currentProcessingItem(plan);
-  const items = plan.items.map((item) => renderPlanItem(item, item.activityId === current?.activityId)).join("");
+  const target = jumpTarget(plan);
+  const items = plan.items.map((item) => renderPlanItem(item, item.activityId === target?.item.activityId)).join("");
+  const targetDescription = target
+    ? target.kind === "current"
+      ? `正在处理第 ${target.item.sequence} 条动态`
+      : target.kind === "pending"
+        ? `等待处理第 ${target.item.sequence} 条动态`
+        : `已完成，定位到第 ${target.item.sequence} 条动态`
+    : "当前没有可定位的动态";
   const planSection = `<section class="panel run-plan"><div class="plan-top"><div><span class="kicker">RUN PLAN #${plan.id}</span><h2>本次运行计划</h2><p class="section-description">${escapeHtml(plan.statusDetail ?? "等待读取计划状态。")}</p></div><div class="current-action"><span>当前唯一操作</span>${renderAction(plan)}</div></div>
-    <div class="plan-navigation"><span>${current ? `正在处理第 ${current.sequence} 条动态` : "当前没有正在处理的动态"}</span>${renderJumpCurrentButton(plan)}</div>
+    <div class="plan-navigation"><span>${targetDescription}</span>${renderJumpCurrentButton(plan)}</div>
     <div class="metric-grid plan-metrics"><div><span>全部动态</span><strong>${stats.totalActivities ?? 0}</strong></div><div><span>计划处理</span><strong>${stats.plannedActivities ?? 0}</strong></div><div><span>跳过</span><strong>${stats.skippedActivities ?? 0}</strong></div><div><span>阻塞</span><strong>${blocked}</strong></div></div>
     <p class="status-line">${executionPolicy(plan)}</p>
     <div class="table-wrap"><table class="run-plan-table"><colgroup><col class="run-plan-col-sequence"><col class="run-plan-col-dynamic"><col class="run-plan-col-family"><col class="run-plan-col-page-state"><col class="run-plan-col-run-state"></colgroup><thead><tr><th>序号</th><th>动态</th><th>流程</th><th>页面状态</th><th>运行状态</th></tr></thead><tbody>${items || `<tr><td colspan="5">计划为空。</td></tr>`}</tbody></table></div>
