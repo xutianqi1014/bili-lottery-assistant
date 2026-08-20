@@ -20,7 +20,13 @@ Windows 用户建议直接从 GitHub Release 下载：
 
 <https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.3>
 
-下载并解压 `BiliLotteryAssistant-windows-x64-v0.1.3.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
+由于 GitHub 对大文件上传连接可能中断，Release 将 Windows 包拆为 `.001` 至 `.014` 共 14 个分卷。请下载这 14 个同名分卷并放到同一目录，在该目录执行以下命令合并：
+
+```powershell
+cmd /c copy /b BiliLotteryAssistant-windows-x64-v0.1.3.zip.001+BiliLotteryAssistant-windows-x64-v0.1.3.zip.002+BiliLotteryAssistant-windows-x64-v0.1.3.zip.003+BiliLotteryAssistant-windows-x64-v0.1.3.zip.004+BiliLotteryAssistant-windows-x64-v0.1.3.zip.005+BiliLotteryAssistant-windows-x64-v0.1.3.zip.006+BiliLotteryAssistant-windows-x64-v0.1.3.zip.007+BiliLotteryAssistant-windows-x64-v0.1.3.zip.008+BiliLotteryAssistant-windows-x64-v0.1.3.zip.009+BiliLotteryAssistant-windows-x64-v0.1.3.zip.010+BiliLotteryAssistant-windows-x64-v0.1.3.zip.011+BiliLotteryAssistant-windows-x64-v0.1.3.zip.012+BiliLotteryAssistant-windows-x64-v0.1.3.zip.013+BiliLotteryAssistant-windows-x64-v0.1.3.zip.014 BiliLotteryAssistant-windows-x64-v0.1.3.zip
+```
+
+再解压合并后的 `BiliLotteryAssistant-windows-x64-v0.1.3.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
 
 <http://127.0.0.1:8787/>
 
