@@ -563,6 +563,37 @@ async def test_reader_treats_expired_reservation_button_as_terminal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reader_detects_revoked_live_reservation_without_prize_marker() -> None:
+    class RevokedReservationPage(_ReservationPage):
+        url = "https://www.bilibili.com/opus/1237497060024909832"
+        reservation_label = "已撤销"
+        body_text = "直播预约：试胆大会 明天 05:00 直播 已撤销"
+
+        async def content(self) -> str:
+            return (
+                "<main>直播预约：试胆大会 明天 05:00 直播 "
+                "<div class='bili-dyn-card-reserve__card'><button>已撤销</button>"
+                "</div></main>"
+            )
+
+    class RevokedReservationBrowser:
+        async def open(self, url: str) -> RevokedReservationPage:
+            del url
+            return RevokedReservationPage()
+
+    result = await RuntimeActivityReader().read(
+        RevokedReservationBrowser(),
+        "1237497060024909832",
+        "https://www.bilibili.com/opus/1237497060024909832",
+    )
+
+    assert result.snapshot.has_official_lottery_entry is False
+    assert result.snapshot.has_reservation_entry is True
+    assert result.snapshot.reservation_control_text == "已撤销"
+    assert result.snapshot.expired_text is True
+
+
+@pytest.mark.asyncio
 async def test_reader_does_not_classify_generic_reservation_word_as_reservation():
     class GenericReservationPage(_ReservationPage):
         def __init__(self) -> None:

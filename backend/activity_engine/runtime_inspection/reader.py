@@ -36,10 +36,15 @@ _UNAVAILABLE_ERROR_SHELL_RE = re.compile(r"返回上一页\s*换一张", re.IGNO
 _COUNTDOWN_RE = re.compile(r"开奖倒计时|距离开奖|倒计时")
 _DRAW_TIME_RE = re.compile(r"开奖时间\s*[:：]?")
 _RESERVATION_CONTROL_RE = re.compile(r"^(?:预约|已预约)$")
-# 预约抽奖的唯一分类信号是预约卡片中的“预约有奖”文案。按钮变成
+# 预约抽奖的主要分类信号是预约卡片中的“预约有奖”文案。按钮变成
 # “已结束”或“去观看”只表示该卡片不可执行，不单独把普通动态分类成预约。
+# B站对已撤销的直播预约会移除“预约有奖”文案，但仍保留预约卡片和
+# “已撤销”按钮；该组合是一个独立的、可安全跳过的预约终态信号。
 _RESERVATION_CARD_RE = re.compile(r"预约\s*有奖")
-_RESERVATION_TERMINAL_RE = re.compile(r"^(?:已结束|预约已结束|预约已过期|已取消)$")
+_RESERVATION_TERMINAL_RE = re.compile(
+    r"^(?:已结束|预约已结束|预约已过期|已取消|已撤销)$"
+)
+_RESERVATION_REVOKED_RE = re.compile(r"^已撤销$")
 _RESERVATION_WATCH_ONLY_RE = re.compile(r"^去观看$")
 _RESERVATION_BUTTON_SELECTOR = ".bili-dyn-card-reserve__card button"
 _RESERVATION_MARKER_SELECTOR = ".bili-dyn-card-reserve__lottery__text"
@@ -472,21 +477,24 @@ class RuntimeActivityReader:
         The button labels ``已结束`` and ``去观看`` are only terminal states.
         They are accepted here only after the page has independently exposed
         the exact ``预约有奖`` card marker; neither is a reservation
-        classifier signal on its own.
+        classifier signal on its own.  ``已撤销`` is the exception: B站
+        removes the prize marker for revoked live streams, so the exact
+        label is accepted only from the scoped reservation-card button.
         """
 
         locator_factory = getattr(page, "locator", None)
         if not callable(locator_factory):
             return _ReservationControlRead()
         has_card_marker = await cls._has_reservation_card_marker(page, body_text)
-        # A button label alone is never enough.  Only the reserve card that
-        # carries the exact “预约有奖” marker may expose reservation controls.
-        if not has_card_marker:
-            return _ReservationControlRead()
         for attempt in range(_RESERVATION_WAIT_ATTEMPTS):
             try:
                 controls = locator_factory(_RESERVATION_BUTTON_SELECTOR)
                 total = int(await controls.count())
+                if total == 0 and not has_card_marker:
+                    # Avoid adding the reservation hydration wait to ordinary
+                    # dynamics that have neither a prize marker nor a scoped
+                    # reservation-card control.
+                    return _ReservationControlRead()
                 labels: list[str] = []
                 terminal_labels: list[str] = []
                 nth = getattr(controls, "nth", None)
@@ -504,11 +512,14 @@ class RuntimeActivityReader:
                     if not callable(inner_text):
                         continue
                     label = _clean_text(str(await inner_text(timeout=1_000)))
-                    if _RESERVATION_CONTROL_RE.fullmatch(label):
+                    if has_card_marker and _RESERVATION_CONTROL_RE.fullmatch(label):
                         labels.append(label)
-                    elif has_card_marker and (
-                        _RESERVATION_TERMINAL_RE.fullmatch(label)
-                        or _RESERVATION_WATCH_ONLY_RE.fullmatch(label)
+                    elif _RESERVATION_REVOKED_RE.fullmatch(label) or (
+                        has_card_marker
+                        and (
+                            _RESERVATION_TERMINAL_RE.fullmatch(label)
+                            or _RESERVATION_WATCH_ONLY_RE.fullmatch(label)
+                        )
                     ):
                         terminal_labels.append(label)
                 if labels:
@@ -521,7 +532,7 @@ class RuntimeActivityReader:
                         active=active > 0 and unbooked == 0,
                         text="、".join(dict.fromkeys(labels)),
                     )
-                if has_card_marker:
+                if has_card_marker or terminal_labels:
                     if len(terminal_labels) == 1:
                         return _ReservationControlRead(
                             present=True,

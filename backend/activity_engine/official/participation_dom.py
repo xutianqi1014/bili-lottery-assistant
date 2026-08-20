@@ -51,7 +51,10 @@ _POLL_ATTEMPTS = 30
 _POLL_INTERVAL_MS = 500
 _RESERVATION_CONTROL_RE = re.compile(r"^(?:预约|已预约)$")
 _RESERVATION_CARD_RE = re.compile(r"预约\s*有奖")
-_RESERVATION_TERMINAL_RE = re.compile(r"^(?:已结束|预约已结束|预约已过期|已取消)$")
+_RESERVATION_TERMINAL_RE = re.compile(
+    r"^(?:已结束|预约已结束|预约已过期|已取消|已撤销)$"
+)
+_RESERVATION_REVOKED_RE = re.compile(r"^已撤销$")
 _RESERVATION_WATCH_ONLY_RE = re.compile(r"^去观看$")
 _RESERVATION_BUTTON_SELECTOR = ".bili-dyn-card-reserve__card button"
 _RESERVATION_MARKER_SELECTOR = ".bili-dyn-card-reserve__lottery__text"
@@ -420,8 +423,6 @@ async def _read_reservation_controls(
     except Exception:
         body_text = ""
     has_card_marker = await _has_reservation_card_marker(page, body_text, timeout_ms)
-    if not has_card_marker:
-        return [], []
     try:
         locator = page.locator(_RESERVATION_BUTTON_SELECTOR)
         total = await locator.count()
@@ -443,13 +444,17 @@ async def _read_reservation_controls(
         if callable(is_visible) and not await is_visible():
             continue
         label = _normalize(await _read_text(candidate, timeout_ms))
-        if _RESERVATION_CONTROL_RE.fullmatch(label) or (
+        # A revoked live stream can remove the “预约有奖” marker.  Keep the
+        # exception narrow: only the exact “已撤销” label from the scoped
+        # reserve-card button is accepted without the marker.
+        if (
             has_card_marker
             and (
-                _RESERVATION_TERMINAL_RE.fullmatch(label)
+                _RESERVATION_CONTROL_RE.fullmatch(label)
+                or _RESERVATION_TERMINAL_RE.fullmatch(label)
                 or _RESERVATION_WATCH_ONLY_RE.fullmatch(label)
             )
-        ):
+        ) or _RESERVATION_REVOKED_RE.fullmatch(label):
             controls.append(candidate)
             labels.append(label)
     return controls, labels

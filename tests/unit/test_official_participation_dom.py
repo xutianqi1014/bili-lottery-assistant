@@ -491,6 +491,22 @@ async def test_dom_transport_skips_watch_only_reservation_card_without_writes():
 
 
 @pytest.mark.asyncio
+async def test_dom_transport_skips_revoked_reservation_without_prize_marker():
+    page = _ReservationPage(label="已撤销")
+    page.body.text = "直播预约：试胆大会 明天 05:00 直播 已撤销"
+    result = await DomOfficialParticipationTransport(_ReservationBrowser(page)).perform(
+        target_url="https://www.bilibili.com/opus/1237497060024909832",
+        payload={},
+    )
+
+    assert result.state is OfficialParticipationOutcomeState.EXPIRED
+    assert result.code == "RESERVATION_EXPIRED"
+    assert page.button.clicks == 0
+    assert page.like_button.clicks == 0
+    assert page.profile_page.button.clicks == 0
+
+
+@pytest.mark.asyncio
 async def test_dom_transport_skips_reservation_that_expires_after_click():
     class ExpiredAfterClickPage(_ReservationPage):
         def __init__(self) -> None:

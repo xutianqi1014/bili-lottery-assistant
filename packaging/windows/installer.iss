@@ -1,11 +1,11 @@
 ; Inno Setup starting point. Build only after a clean-machine test of dist/BiliLotteryAssistant.
 [Setup]
 AppName=BiliLotteryAssistant
-AppVersion=0.1.2
+AppVersion=0.1.3
 DefaultDirName={autopf}\BiliLotteryAssistant
 DefaultGroupName=BiliLotteryAssistant
 OutputDir=output
-OutputBaseFilename=BiliLotteryAssistant-Setup-0.1.2
+OutputBaseFilename=BiliLotteryAssistant-Setup-0.1.3
 Compression=lzma
 SolidCompression=yes
 

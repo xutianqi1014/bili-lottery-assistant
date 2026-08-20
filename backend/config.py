@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="BILI_", env_file=".env", extra="ignore")
 
     app_name: str = "Bili Lottery Assistant"
-    version: str = "0.1.2"
+    version: str = "0.1.3"
     host: str = "127.0.0.1"
     port: int = 8787
     data_dir: Path = Path(user_data_dir("BiliLotteryAssistant", "OpenAI"))
