@@ -35,6 +35,7 @@ def add_origin(
     activity: Activity,
     source_position: int,
     discovery_id: int,
+    source_section: str | None = None,
 ) -> bool:
     assert activity.id is not None
     origin = session.get(ActivityOrigin, (source_article_id, activity.id))
@@ -44,9 +45,11 @@ def add_origin(
             source_article_id=source_article_id,
             activity_id=activity.id,
             source_position=source_position,
+            source_section=source_section,
             discovered_in_run_id=discovery_id,
         )
     origin.source_position = source_position
+    origin.source_section = source_section
     origin.discovered_in_run_id = discovery_id
     session.add(origin)
     return created

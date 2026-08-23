@@ -3,7 +3,9 @@ import type { RenderedWorkspacePage, WorkspaceSnapshot } from "./view-types";
 
 function activityTypeLabel(profile: { activityTypes?: string[] }): string {
   const labels: Record<string, string> = {
-    official: "官方",
+    // Keep the internal ``official`` mode for execution, but show the
+    // user-facing category as interaction.
+    official: "互动",
     unofficial: "非官方",
     reservation: "预约",
   };

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 
 from backend.domain.entities import (
     ActivityExtractionResult,
@@ -24,6 +25,9 @@ def content_fingerprint(text: str) -> str:
 async def extract_activities(
     article: SourceArticleCandidate,
     browser: BrowserGateway | None,
+    *,
+    include_sections: Collection[str] | None = None,
+    excluded_sections: Collection[str] | None = None,
 ) -> ActivityExtractionResult:
     if browser is None:
         return ActivityExtractionResult(
@@ -50,13 +54,19 @@ async def extract_activities(
             safe_detail="未找到来源专栏正文容器，未猜测动态队列。",
         )
 
-    queue = collect_queue(root, article.canonical_url)
+    queue = collect_queue(
+        root,
+        article.canonical_url,
+        include_sections=include_sections,
+        excluded_sections=excluded_sections,
+    )
     refs = tuple(
         ActivityRef(
             dynamic_id=item.dynamic_id,
             canonical_url=item.canonical_url,
             source_position=item.source_position,
             title=item.title,
+            source_section=item.source_section,
         )
         for item in queue.items
     )

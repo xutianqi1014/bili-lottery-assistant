@@ -26,12 +26,16 @@ _ADDITIONS: dict[str, dict[str, str]] = {
     "runs": {
         "status_detail": "TEXT",
     },
+    "activity_origins": {
+        "source_section": "TEXT",
+    },
     "run_items": {
         "runtime_inspected_at": "DATETIME",
         "runtime_selector_version": "TEXT",
         "runtime_inspection_json": "TEXT NOT NULL DEFAULT '{}'",
         "result_code": "TEXT",
         "result_message": "TEXT",
+        "source_section": "TEXT",
     },
 }
 

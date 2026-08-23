@@ -127,6 +127,21 @@ class RunExecutionService:
                     select(RunItem.activity_id).where(
                         RunItem.run_id == run_id,
                         RunItem.family == "official",
+                        # ``interactive`` is a mixed source-article section;
+                        # do not force the official writer/scope validation
+                        # before the dynamic's like-first runtime inspection.
+                        RunItem.mode != "interactive",
+                        RunItem.__table__.c.state.in_(  # type: ignore[attr-defined]
+                            ["planned", "running", "waiting_user"]
+                        ),
+                    )
+                ).first()
+            )
+            has_pending_interactive = bool(
+                session.exec(
+                    select(RunItem.activity_id).where(
+                        RunItem.run_id == run_id,
+                        RunItem.mode == "interactive",
                         RunItem.__table__.c.state.in_(  # type: ignore[attr-defined]
                             ["planned", "running", "waiting_user"]
                         ),
@@ -138,6 +153,8 @@ class RunExecutionService:
                     raise ValueError("OFFICIAL_PARTICIPATION_AUTOMATION_SERVICE_MISSING")
                 self.official_participation_service.validate_run_scope(run_id)
                 next_detail = "已进入执行队列；官方目标将自动处理，非官方目标按当前策略检查。"
+            elif has_pending_interactive:
+                next_detail = "已进入互动混合执行队列；每条先检查点赞，再按页面实际类型处理。"
             elif (
                 self._unofficial_automation_enabled
                 and self.unofficial_participation_service is not None
@@ -191,7 +208,10 @@ class RunExecutionService:
 
             if unresolved:
                 item = unresolved[0]
-                item.mode = "unknown"
+                # Keep the discovery-time section hint available after a
+                # manual repair.  Runtime mode may have been overwritten by
+                # the failed inspection, so it cannot be used as the hint.
+                item.mode = item.source_section or "unknown"
                 item.unofficial_type = "unknown"
                 item.platform_status = "unchecked"
                 item.state = "planned"
@@ -288,9 +308,11 @@ class RunExecutionService:
                         return
                     automated_count += 1
                     if self._next_item(run_id) is not None:
+                        processed_mode = self._read_item_mode(run_id, item.activity_id)
                         await asyncio.sleep(
                             self._next_unofficial_delay_seconds()
-                            if item.mode == ActivityMode.UNOFFICIAL.value
+                            if processed_mode
+                            in {ActivityMode.UNOFFICIAL.value, "interactive"}
                             else self._next_official_delay_seconds()
                         )
                     continue
@@ -862,7 +884,13 @@ class RunExecutionService:
         # same configured 1–2 second range is used for both automated and
         # read-only execution; official dynamics keep their existing timing.
         post_open_delay = (
-            self._next_unofficial_delay_seconds() if item.family != "official" else 0.0
+            self._next_unofficial_delay_seconds()
+            if (
+                item.family != "official"
+                or item.mode in {ActivityMode.UNOFFICIAL.value, "interactive"}
+                or item.source_section == "interactive"
+            )
+            else 0.0
         )
         read = await self.reader.read(
             self.browser,
@@ -876,6 +904,12 @@ class RunExecutionService:
             # classification so a liked item is never blocked by a source
             # activity-type allow-list and no type-specific DOM is inspected.
             return _already_liked_runtime_outcome(read)
+        if not read.dynamic_unavailable and read.activity_like_unknown:
+            # The like state is the global participation marker.  If the
+            # visible control is absent/ambiguous, never continue into type
+            # classification or a comment/repost/official write: a later
+            # writer could otherwise toggle an already-active like off.
+            return _activity_like_state_unknown_runtime_outcome(read)
 
         source_policy = self._source_activity_policy(run, item)
         classification = self.classifier.classify(
@@ -1025,6 +1059,19 @@ class RunExecutionService:
                 )
                 .order_by(RunItem.__table__.c.sequence)  # type: ignore[attr-defined]
             ).first()
+
+    def _read_item_mode(self, run_id: int, activity_id: int) -> str:
+        """Read the post-inspection mode for delay selection.
+
+        ``execute`` holds a stale ORM snapshot while the configured automatic
+        path persists the actual runtime classification.  Re-reading this
+        single field avoids applying the official delay after a provisional
+        interactive item resolves to a non-official dynamic.
+        """
+
+        with open_session(self.engine) as session:
+            item = session.get(RunItem, (run_id, activity_id))
+            return item.mode if item is not None else "unknown"
 
     def _mark_item_running(self, run_id: int, activity_id: int) -> None:
         with open_session(self.engine) as session:
@@ -1217,6 +1264,8 @@ def _inspection_payload(
         "unofficialType": classification.unofficial_type.value,
         "isExpired": classification.is_expired,
         "isParticipated": classification.is_participated,
+        "activityLikeState": read.activity_like_state,
+        "activityLikeReasonCode": read.activity_like_reason_code,
         "confidence": classification.confidence,
         "evidenceCodes": list(classification.evidence_codes),
         "requiredTopics": list(requirements.required_topics),
@@ -1282,6 +1331,47 @@ def _already_liked_runtime_outcome(read: RuntimeActivityRead) -> RuntimeOutcome:
     )
 
 
+def _activity_like_state_unknown_runtime_outcome(
+    read: RuntimeActivityRead,
+) -> RuntimeOutcome:
+    """Stop before type-specific reads when the global like marker is unclear."""
+
+    classification = ActivityClassification(
+        mode=ActivityMode.UNKNOWN,
+        unofficial_type=UnofficialType.UNKNOWN,
+        is_expired=None,
+        is_participated=None,
+        confidence="low",
+        evidence_codes=("ACTIVITY_LIKE_STATE_UNKNOWN_EARLY_STOP",),
+    )
+    requirements = ParticipationRequirements()
+    result = ActionResult(
+        ActionState.WAITING_USER,
+        "ACTIVITY_LIKE_STATE_UNKNOWN",
+        "打开动态后无法唯一确认点赞状态，已停止类型判断和所有写操作，请人工复核。",
+        True,
+    )
+    inspection = _inspection_payload(read, classification, requirements)
+    inspection["typeClassificationSkipped"] = True
+    inspection["resultCode"] = result.code
+    inspection["resultMessage"] = result.message
+    return RuntimeOutcome(
+        item_state="waiting_user",
+        mode=ActivityMode.UNKNOWN.value,
+        unofficial_type=UnofficialType.UNKNOWN.value,
+        platform_status="manual_review",
+        result_code=result.code,
+        result_message=result.message,
+        block_reason=result.message,
+        inspection=inspection,
+        selector_version=read.selector_version,
+        inspected_at=datetime.now(UTC),
+        requirements=None,
+        unofficial_action_plan=None,
+        comment_context="",
+    )
+
+
 def _item_state_for(action_state: ActionState) -> str:
     if action_state in {
         ActionState.EXPIRED,
@@ -1328,6 +1418,7 @@ def _should_record_runtime_problem(result_code: str) -> bool:
             "RESERVATION_CONTROL_AMBIGUOUS",
             "RESERVATION_CONTROL_DISABLED",
             "SOURCE_ACTIVITY_TYPE_NOT_ALLOWED",
+            "ACTIVITY_LIKE_STATE_UNKNOWN",
         }
     )
 

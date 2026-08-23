@@ -30,4 +30,5 @@ class ActivityOrigin(SQLModel, table=True):
     source_article_id: int = Field(foreign_key="source_articles.id", primary_key=True)
     activity_id: int = Field(foreign_key="activities.id", primary_key=True)
     source_position: int
+    source_section: str | None = None
     discovered_in_run_id: int = Field(foreign_key="discovery_runs.id")

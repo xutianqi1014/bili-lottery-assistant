@@ -10,6 +10,7 @@ import asyncio
 import html as html_lib
 import re
 from dataclasses import dataclass
+from typing import cast
 from urllib.parse import urlsplit
 
 from backend.activity_engine.models import ActivitySnapshot
@@ -58,12 +59,49 @@ _LOTTERY_DIALOG_SELECTORS = (
     '[class*="lottery-dialog"]',
 )
 _LOTTERY_FRAME_HINT = "/h5/lottery/result"
+_LIKE_SCOPED_PREFIX = (
+    ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+)
 _LIKE_ACTIVE_SELECTORS = (
+    f"{_LIKE_SCOPED_PREFIX}.side-toolbar__action.like.is-active",
+    f'{_LIKE_SCOPED_PREFIX}.side-toolbar__action.like[aria-pressed="true"]',
+    f'{_LIKE_SCOPED_PREFIX}.side-toolbar__action.like[data-state="active"]',
+    f'{_LIKE_SCOPED_PREFIX}.side-toolbar__action.like[data-liked="true"]',
     ".side-toolbar__action.like.is-active",
     '.side-toolbar__action.like[aria-pressed="true"]',
     '.side-toolbar__action.like[data-state="active"]',
     '.side-toolbar__action.like[data-liked="true"]',
     '.side-toolbar__action.like[class*="liked"]',
+    ".bili-dyn-action.like.is-active",
+    ".bili-dyn-action.like.active",
+    '.bili-dyn-action.like[aria-pressed="true"]',
+    '.bili-dyn-action.like[data-state="active"]',
+    '.bili-dyn-action.like[data-liked="true"]',
+    '[data-like-state="liked"]',
+    '[aria-label*="已点赞"]',
+    '[aria-label*="取消点赞"]',
+    '[title*="已点赞"]',
+    '[title*="取消点赞"]',
+)
+_LIKE_OUTER_ACTIVE_SELECTORS = (
+    f"{_LIKE_SCOPED_PREFIX}.side-toolbar__action.like.is-active",
+    f'{_LIKE_SCOPED_PREFIX}.side-toolbar__action.like[aria-pressed="true"]',
+    f'{_LIKE_SCOPED_PREFIX}.side-toolbar__action.like[data-state="active"]',
+    f'{_LIKE_SCOPED_PREFIX}.side-toolbar__action.like[data-liked="true"]',
+    ".bili-dyn-action.like.is-active",
+    ".bili-dyn-action.like.active",
+    '.bili-dyn-action.like[aria-pressed="true"]',
+    '.bili-dyn-action.like[data-state="active"]',
+    '.bili-dyn-action.like[data-liked="true"]',
+)
+_LIKE_CONTROL_SELECTORS = (
+    f"{_LIKE_SCOPED_PREFIX}.side-toolbar__action.like",
+    ".content .sidebar-wrap .side-toolbar__action.like",
+    ".side-toolbar__action.like",
+    ".bili-dyn-action.like",
+    '[data-like-state]',
+    'button[aria-label*="点赞"]',
+    '[role="button"][aria-label*="点赞"]',
 )
 _PANEL_WAIT_ATTEMPTS = 10
 _PANEL_WAIT_INTERVAL_MS = 500
@@ -97,6 +135,13 @@ class RuntimeActivityRead:
     nonofficial_author_name: str = ""
     nonofficial_evidence_codes: tuple[str, ...] = ()
     nonofficial_selector_version: str = UNOFFICIAL_SELECTOR_VERSION
+    # ``not_checked`` is reserved for legacy test/page adapters.  The real
+    # reader always returns liked, unliked, or unknown before collecting any
+    # type-specific evidence.
+    activity_like_state: str = "not_checked"
+    activity_like_reason_code: str = ""
+    activity_like_unknown: bool = False
+    activity_like_selector: str | None = None
 
 
 class RuntimeActivityReader:
@@ -145,13 +190,11 @@ class RuntimeActivityReader:
         # type-specific evidence. Once it is active, the caller can safely
         # skip the item without opening a lottery panel, reading a reservation
         # card, parsing non-official requirements, or applying a source type
-        # allow-list. This also avoids needless DOM reads on handled dynamics.
-        activity_like_active = False
-        for selector in _LIKE_ACTIVE_SELECTORS:
-            if await self._has_visible_locator(page, selector):
-                activity_like_active = True
-                break
-        if activity_like_active:
+        # allow-list. An absent/ambiguous control is *not* treated as
+        # unliked: that would let a later writer toggle an already-active like
+        # off, which is the failure this early gate is designed to prevent.
+        like_read = await self._read_activity_like_state(page)
+        if like_read.state == "liked":
             return RuntimeActivityRead(
                 snapshot=ActivitySnapshot(
                     dynamic_id=dynamic_id,
@@ -163,6 +206,26 @@ class RuntimeActivityReader:
                 ),
                 body_excerpt=clean_body[:2000],
                 page_title=clean_title,
+                selector_version="activity-page-v4-like-first-tristate",
+                activity_like_state="liked",
+                activity_like_reason_code=like_read.reason_code,
+                activity_like_selector=like_read.selector,
+            )
+        if like_read.state == "unknown":
+            return RuntimeActivityRead(
+                snapshot=ActivitySnapshot(
+                    dynamic_id=dynamic_id,
+                    canonical_url=canonical_url,
+                    body_text=clean_body,
+                    actionable_text=clean_body,
+                ),
+                body_excerpt=clean_body[:2000],
+                page_title=clean_title,
+                selector_version="activity-page-v4-like-first-tristate",
+                activity_like_state="unknown",
+                activity_like_reason_code=like_read.reason_code,
+                activity_like_unknown=True,
+                activity_like_selector=like_read.selector,
             )
 
         unofficial_evidence = await read_unofficial_page_evidence(page)
@@ -199,7 +262,7 @@ class RuntimeActivityReader:
             nonofficial_evidence_codes.append("BOOSTED_NESTED_OFFICIAL_ENTRY_IGNORED")
 
         lottery_panel = _LotteryPanelRead()
-        if has_official_entry and not activity_like_active:
+        if has_official_entry:
             lottery_panel = await self._open_lottery_panel(page)
             if lottery_panel.text:
                 body_text = f"{body_text}\n{lottery_panel.text}"
@@ -237,7 +300,7 @@ class RuntimeActivityReader:
                 reservation_control_text=reservation.text,
                 official_lottery_panel_opened=lottery_panel.opened,
                 official_lottery_panel_error=lottery_panel.error_code,
-                activity_like_active=activity_like_active,
+                activity_like_active=False,
                 already_participated_text=bool(_PARTICIPATED_RE.search(visible_text)),
                 expired_text=expired_text,
                 actionable_text=actionable_text,
@@ -272,6 +335,68 @@ class RuntimeActivityReader:
             ),
             nonofficial_author_name=unofficial_evidence.author_name,
             nonofficial_evidence_codes=tuple(dict.fromkeys(nonofficial_evidence_codes)),
+            selector_version="activity-page-v4-like-first-tristate",
+            activity_like_state="unliked",
+            activity_like_reason_code=like_read.reason_code,
+            activity_like_selector=like_read.selector,
+        )
+
+    @classmethod
+    async def _read_activity_like_state(cls, page: object) -> _LikeStateRead:
+        """Return liked/unliked only after a visible unique like control read."""
+
+        # Prefer active markers scoped to the outer dynamic.  This prevents a
+        # forwarded original's active toolbar from making the outer dynamic
+        # look already liked.
+        for selector in _LIKE_OUTER_ACTIVE_SELECTORS:
+            if await cls._has_visible_locator(page, selector):
+                return _LikeStateRead(
+                    state="liked",
+                    reason_code="ACTIVITY_LIKE_ACTIVE_MARKER",
+                    selector=selector,
+                )
+
+        ambiguous_selector: str | None = None
+        for selector in _LIKE_CONTROL_SELECTORS:
+            visible_count = await cls._visible_locator_count(page, selector)
+            if visible_count == 0:
+                continue
+            if visible_count != 1:
+                ambiguous_selector = selector
+                continue
+            locator = await cls._first_visible_locator(page, selector)
+            if locator is None:
+                continue
+            if await cls._locator_has_active_marker(locator):
+                return _LikeStateRead(
+                    state="liked",
+                    reason_code="ACTIVITY_LIKE_ACTIVE_ATTRIBUTE",
+                    selector=selector,
+                )
+            return _LikeStateRead(
+                state="unliked",
+                reason_code="ACTIVITY_LIKE_UNLIKED_UNIQUE_CONTROL",
+                selector=selector,
+            )
+        # Compatibility fallback for legacy layouts that expose only the
+        # generic toolbar selector.  If an outer control was present above,
+        # this branch is never reached.
+        for selector in _LIKE_ACTIVE_SELECTORS:
+            if await cls._has_visible_locator(page, selector):
+                return _LikeStateRead(
+                    state="liked",
+                    reason_code="ACTIVITY_LIKE_ACTIVE_MARKER",
+                    selector=selector,
+                )
+        if ambiguous_selector is not None:
+            return _LikeStateRead(
+                state="unknown",
+                reason_code="ACTIVITY_LIKE_CONTROL_NOT_UNIQUE",
+                selector=ambiguous_selector,
+            )
+        return _LikeStateRead(
+            state="unknown",
+            reason_code="ACTIVITY_LIKE_CONTROL_NOT_FOUND",
         )
 
     @classmethod
@@ -579,6 +704,77 @@ class RuntimeActivityReader:
                 pass
         return bool(_RESERVATION_CARD_RE.search(_clean_text(body_text)))
 
+    @classmethod
+    async def _visible_locator_count(cls, page: object, selector: str) -> int:
+        locator_factory = getattr(page, "locator", None)
+        if not callable(locator_factory):
+            return 0
+        try:
+            locator = locator_factory(selector)
+            count = getattr(locator, "count", None)
+            total = int(await count()) if callable(count) else 0
+            if total <= 0:
+                return 0
+            nth = getattr(locator, "nth", None)
+            visible = 0
+            for index in range(total):
+                candidate = nth(index) if callable(nth) else locator
+                is_visible = getattr(candidate, "is_visible", None)
+                if not callable(is_visible) or await is_visible():
+                    visible += 1
+            return visible
+        except Exception:
+            return 0
+
+    @classmethod
+    async def _first_visible_locator(cls, page: object, selector: str) -> object | None:
+        locator_factory = getattr(page, "locator", None)
+        if not callable(locator_factory):
+            return None
+        try:
+            locator = locator_factory(selector)
+            count = getattr(locator, "count", None)
+            total = int(await count()) if callable(count) else 1
+            nth = getattr(locator, "nth", None)
+            for index in range(total):
+                candidate = nth(index) if callable(nth) else locator
+                is_visible = getattr(candidate, "is_visible", None)
+                if callable(is_visible) and not await is_visible():
+                    continue
+                return cast(object, candidate)
+            return cast(object, locator)
+        except Exception:
+            return None
+
+    @staticmethod
+    async def _locator_has_active_marker(locator: object) -> bool:
+        """Check state attributes used by newer Bilibili toolbar builds."""
+
+        get_attribute = getattr(locator, "get_attribute", None)
+        if callable(get_attribute):
+            for name in ("class", "aria-pressed", "data-state", "data-liked", "data-like-state"):
+                try:
+                    value = str(await get_attribute(name) or "").casefold()
+                except Exception:
+                    continue
+                if name == "class":
+                    if re.search(
+                        r"(?:^|\s)(?:is-active|active|liked|like--active|on)(?:\s|$)",
+                        value,
+                    ):
+                        return True
+                elif value in {"true", "active", "liked", "1", "on"}:
+                    return True
+        inner_text = getattr(locator, "inner_text", None)
+        if callable(inner_text):
+            try:
+                text = _clean_text(str(await inner_text(timeout=1_000))).casefold()
+                if re.search(r"已点赞|取消点赞", text):
+                    return True
+            except Exception:
+                pass
+        return False
+
     @staticmethod
     async def _has_visible_locator(page: object, selector: str) -> bool:
         locator_factory = getattr(page, "locator", None)
@@ -655,3 +851,10 @@ class _ReservationControlRead:
     present: bool = False
     active: bool = False
     text: str = ""
+
+
+@dataclass(frozen=True)
+class _LikeStateRead:
+    state: str
+    reason_code: str
+    selector: str | None = None

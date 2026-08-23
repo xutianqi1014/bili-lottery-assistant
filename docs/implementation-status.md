@@ -1,8 +1,8 @@
 # 实现状态
 
-当前版本：`0.1.3`
+当前版本：`0.1.4`
 
-更新时间：2026-08-20
+更新时间：2026-08-24
 
 > 本文下方保留按时间记录的历史实现条目；其中出现的 `0.1.0` 或 `0.1.1` 是对应条目当时的真实版本，不代表当前软件版本。
 
@@ -481,3 +481,44 @@ DOM 写入层同步识别“去观看”，并在控件与其他按钮同时出�
 - 执行页当前动态定位：新增跳转按钮和处理间隔回退策略，确保运行中、暂停等待和全部终态时都存在可定位目标。
 - 当前源码、前端资源、Windows 打包配置、自述文件和版本元数据统一为 `0.1.3`；开发分支统一为 `v0.1.3`。
 - 本次验证：后端 `207 passed, 2 skipped`，前端 `22 passed`，Ruff、Mypy、TypeScript 检查和 Vite 构建通过；Windows 目录版 EXE SHA-256 为 `FE414B39640C599B59B689D4890EE9EC7CBBD73A34ED791F8B05C5004B569718`。
+
+## 2026-08-23 番茄薯条喵互动抽奖来源（本地改进）
+
+新增 `tomato_fries_v1` 内置来源，MID 为 `3546836235193146`，显示名为“番茄薯条喵”。适配器通过
+`x/article/up/lists` 只接受名称为“互动抽奖”的合集（当前实测 `rl954367`），忽略同页的“转盘合集”；通过
+`x/article/list/web/articles` 按发布时间、文章 ID 和接口位置的稳定排序取最新 3 篇。参考专栏为
+`https://www.bilibili.com/opus/1239314926435041298/?from=readlist`。
+
+该合集正文按可见文本分区处理：带“上期/上一期传送门”的链接和 `charge`（充电抽奖）分区被跳过；采用包含式白名单，仅
+`reservation`（预约抽奖）与 `interactive`（互动抽奖）进入候选。互动抽奖中的官方/非官方分类仍由运行时页面事实决定，
+不新增第二套执行流程。来源配置允许 `official`、`unofficial`、`reservation` 三种运行时类型，并记录上传页与参考专栏。
+上述来源适配器改动已汇总进本次 `v0.1.4` 发布。
+
+随后使用当前源码重新构建 Windows 目录包，产物为
+`dist/BiliLotteryAssistant/BiliLotteryAssistant.exe`，SHA-256 为
+`B81EF4DBBE492ADC542ED5B43D467E0B67F30345BF8A6C38B00A20ED3E5CC70C`。
+
+## 2026-08-23 来源分段预分类与点赞先行安全门（本地改进）
+
+针对动态 `1237748543249186818` 在来源专栏已标注为互动分段、但打开后运行显示为非官方且没有先复核点赞的问题，本地源码做了两层修正：
+
+- `queue_rules.collect_queue` 为每个链接保留 `source_section`（`reservation`/`interactive`/`charge`），通过 `ActivityRef → ActivityOrigin → RunItem` 写入执行计划；计划页和发现页分别显示“预约/互动”。互动分段只表示专栏结构，不能替代运行时页面分类；互动分段打开后仍可按页面信号解析为官方或非官方。
+- 动态打开后，`RuntimeActivityReader` 先读取外层点赞控件。已激活的 active class、`aria-pressed=true`、`data-state/data-liked`、新版 `.bili-dyn-action.like` 等标记统一返回 `ALREADY_PARTICIPATED_LIKED`，不读取类型证据、不打开互动抽奖面板、不执行写操作。唯一明确未点赞后才进入 official → reservation → unofficial 分类。
+- 点赞控件缺失、重复或状态无法确认时返回 `ACTIVITY_LIKE_STATE_UNKNOWN`，在分类和写入前暂停并记录问题网址，避免把已有点赞误当未点赞后执行评论/转发再取消点赞。
+- 互动分段使用非官方侧的 1–2 秒打开后等待；运行时若最终分类为非官方，后续间隔也读取已持久化的实际模式，不会继续使用来源 family 的官方延时。重新开始时保留来源分段提示。
+- 非官方写入层同步扩展新版点赞 active 选择器，防止页面重开后把已点赞状态切换为未点赞。
+
+验证结果：后端 `214 passed, 2 skipped`；前端 `22 passed`，TypeScript 检查和 Vite 构建通过，Ruff、Mypy 通过。新增覆盖来源分段持久化、互动计划临时标签、新版 active 点赞标记、无分段标题时的参与标记解析和点赞状态未知时在类型读取前停止。Windows 目录版已重新构建，产物为 [BiliLotteryAssistant.exe](/C:/Users/35267/Desktop/b站抽奖/bili-lottery-assistant/dist/BiliLotteryAssistant/BiliLotteryAssistant.exe)，SHA-256 为 `4A716EF286D39B433243CEE52C47B708D02EB289EC5A3CB7CAD1837EF2D5F0B3`。该修改已汇总进本次 `v0.1.4` 发布。
+
+### 2026-08-24 分类标签统一为“互动”（本地改进）
+
+发现页、概览页和执行计划中的用户可见分类标签，现将内部 `official` 显示为“互动”；`unofficial` 和 `reservation` 仍显示为“非官方”和“预约”。这只是展示层改名，数据库、API、运行计划和执行器仍保留 `official` 内部值，以确保官方互动抽奖继续走官方面板流程。官方自动执行按钮和运行日志中的技术语义保持不变，避免把“互动”展示标签误解为新的运行模式。
+
+## 2026-08-24 v0.1.4 发布改进
+
+本次发布将上方 2026-08-23/24 的本地改进正式纳入版本：
+
+- 当前版本元数据、README、使用说明、设计验收、贡献者信息、PyPI 项目元数据、前端包元数据和 Inno Setup 配置统一为 `0.1.4`。
+- 开发分支统一为 `v0.1.4`，Release 使用 `v0.1.4` 标签和 `BiliLotteryAssistant-windows-x64-v0.1.4` 资产名。
+- 发布前完成后端 `214 passed, 2 skipped`、前端 `22 passed`、Ruff、Mypy、TypeScript 和 Vite 构建验证。
+- Windows 目录版 EXE SHA-256 为 `F360B61499F1433266479890385942B344BF426DC3C3E4ED1A7B062DB528E0F6`；合并 ZIP SHA-256 为 `0755E7259801F312EC1BA01CD719BDE9249ECD22FEB0C18E2248D3BBC9867708`，共 14 个 8 MiB 分卷。

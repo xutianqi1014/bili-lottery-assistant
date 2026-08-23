@@ -61,3 +61,55 @@ def test_queue_without_pinned_section_starts_from_first_and_normalizes_t_url():
         "https://www.bilibili.com/opus/300000001",
         "https://www.bilibili.com/opus/300000002",
     ]
+
+
+def test_mixed_collection_skips_previous_portal_and_charge_section():
+    root = find_content_root(
+        parse_html(
+            """
+            <article class="opus-module-content">
+              <p>上期传送门 <a href="/opus/400000000">上一期合集</a></p>
+              <p>充电抽奖：关注，充电，即可参与</p>
+              <p>1、→ 2026年8月20日 充电，关注、转发、点赞
+                <a href="/opus/400000001">充电</a>
+              </p>
+              <p>预约抽奖：预约，即可参与</p>
+              <p>2、→ 2026年8月21日 <a href="/opus/400000002">预约抽奖</a></p>
+              <p>互动抽奖：关注、转发、点赞</p>
+              <p>3、→ 2026年8月22日 <a href="/opus/400000003">互动抽奖</a></p>
+            </article>
+            """
+        )
+    )
+    assert root is not None
+
+    result = collect_queue(
+        root,
+        "https://www.bilibili.com/read/cv52565444",
+        include_sections={"reservation", "interactive"},
+    )
+
+    assert [item.dynamic_id for item in result.items] == ["400000002", "400000003"]
+    assert [item.source_section for item in result.items] == ["reservation", "interactive"]
+
+
+def test_entry_participation_markers_update_section_without_headings():
+    root = find_content_root(
+        parse_html(
+            """
+            <article class="opus-module-content">
+              <p>1、→ 2026年8月20日 充电，关注、转发、点赞 <a href="/opus/500000001">充电</a></p>
+              <p>2、→ 2026年8月21日 预约，即可参与 <a href="/opus/500000002">预约</a></p>
+              <p>3、→ 2026年8月22日 关注、转发、点赞 <a href="/opus/500000003">互动</a></p>
+            </article>
+            """
+        )
+    )
+    assert root is not None
+    result = collect_queue(
+        root,
+        "https://www.bilibili.com/read/cv52565444",
+        include_sections={"reservation", "interactive"},
+    )
+    assert [item.dynamic_id for item in result.items] == ["500000002", "500000003"]
+    assert [item.source_section for item in result.items] == ["reservation", "interactive"]

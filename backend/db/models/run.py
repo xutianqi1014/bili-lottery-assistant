@@ -46,6 +46,9 @@ class RunItem(SQLModel, table=True):
     mode: str
     unofficial_type: str
     platform_status: str
+    # Discovery-time section hint.  ``mode`` is overwritten with the actual
+    # runtime classification after the dynamic is opened.
+    source_section: str | None = None
     source_article_ids_json: str = "[]"
     action_plan_json: str = "[]"
     state: str = "planned"

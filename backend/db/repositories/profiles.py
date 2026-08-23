@@ -63,10 +63,38 @@ def seed_nuomi_backpack_profile(session: Session) -> SourceProfile:
     )
 
 
+def seed_tomato_fries_profile(session: Session) -> SourceProfile:
+    """Seed 番茄薯条喵's mixed 互动抽奖 source once per database."""
+
+    return _ensure_profile(
+        session,
+        source_key="tomato_fries",
+        mid="3546836235193146",
+        upload_url="https://space.bilibili.com/3546836235193146/upload/opus",
+        adapter_key="tomato_fries_v1",
+        latest_per_family=3,
+        config={
+            "displayName": "番茄薯条喵",
+            "readlistStrategy": "named",
+            "readlistName": "互动抽奖",
+            "activityTypes": ["official", "unofficial", "reservation"],
+            "excludedSections": ["charge"],
+            "referenceUrls": {
+                "sourceArticle": "https://www.bilibili.com/opus/1239314926435041298/?from=readlist",
+                "upload": "https://space.bilibili.com/3546836235193146/upload/opus",
+            },
+        },
+    )
+
+
 def seed_builtin_profiles(session: Session) -> list[SourceProfile]:
     """Ensure all built-in UP profiles exist without changing user settings."""
 
-    return [seed_default_profile(session), seed_nuomi_backpack_profile(session)]
+    return [
+        seed_default_profile(session),
+        seed_nuomi_backpack_profile(session),
+        seed_tomato_fries_profile(session),
+    ]
 
 
 def _ensure_profile(

@@ -33,6 +33,15 @@ def test_builtin_profiles_include_nuomi_year_collection_source():
         assert '"readlistStrategy": "largest_year"' in nuomi.config_json
         assert json.loads(nuomi.config_json)["activityTypes"] == ["official", "reservation"]
 
+        tomato = next(profile for profile in profiles if profile.source_key == "tomato_fries")
+        assert tomato.mid == "3546836235193146"
+        assert tomato.adapter_key == "tomato_fries_v1"
+        assert tomato.latest_per_family == 3
+        tomato_config = json.loads(tomato.config_json)
+        assert tomato_config["readlistName"] == "互动抽奖"
+        assert tomato_config["activityTypes"] == ["official", "unofficial", "reservation"]
+        assert tomato_config["excludedSections"] == ["charge"]
+
 
 def test_existing_profile_gets_missing_display_name_without_overwriting_config():
     engine = create_engine("sqlite://")

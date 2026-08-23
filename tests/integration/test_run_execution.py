@@ -91,6 +91,25 @@ class _Page:
             return _Locator(1 if self.clicked and self.show_panel else 0)
         if selector == ".side-toolbar__action.like.is-active":
             return _Locator(1 if self.liked else 0)
+        if selector in {
+            ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+            ".side-toolbar__action.like.is-active",
+            '.content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > '
+            '.side-toolbar__action.like[aria-pressed="true"]',
+            '.content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > '
+            '.side-toolbar__action.like[data-state="active"]',
+            '.content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > '
+            '.side-toolbar__action.like[data-liked="true"]',
+        }:
+            return _Locator(1 if self.liked else 0)
+        if selector in {
+            ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+            ".side-toolbar__action.like",
+            ".content .sidebar-wrap .side-toolbar__action.like",
+            ".side-toolbar__action.like",
+            ".bili-dyn-action.like",
+        }:
+            return _Locator(1)
         return _Locator(0)
 
     def frame_locator(self, selector: str) -> _FrameLocator:
@@ -126,6 +145,14 @@ class _NonOfficialPage(_Page):
     def locator(self, selector: str) -> _Locator:
         if selector == "body":
             return _Locator(1, self.body)
+        if selector in {
+            ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+            ".side-toolbar__action.like",
+            ".content .sidebar-wrap .side-toolbar__action.like",
+            ".side-toolbar__action.like",
+            ".bili-dyn-action.like",
+        }:
+            return _Locator(1)
         return _Locator(0)
 
 

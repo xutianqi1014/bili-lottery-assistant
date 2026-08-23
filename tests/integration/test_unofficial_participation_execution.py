@@ -79,6 +79,14 @@ class _RuntimePage:
             return _RuntimeLocator(1, "抽奖 评论 转发 点赞 关注")
         if selector in {".opus-module-content", '.bili-dyn-content__forw__desc[data-orig="0"]'}:
             return _RuntimeLocator(1, "抽奖 评论 转发 点赞 关注")
+        if selector in {
+            ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+            ".side-toolbar__action.like",
+            ".content .sidebar-wrap .side-toolbar__action.like",
+            ".side-toolbar__action.like",
+            ".bili-dyn-action.like",
+        }:
+            return _RuntimeLocator(1)
         return _RuntimeLocator(0)
 
 

@@ -255,6 +255,7 @@ def _serialize_run(
                 "url": item.canonical_url,
                 "title": item.title,
                 "family": item.family,
+                "sourceSection": item.source_section,
                 "mode": item.mode,
                 "unofficialType": item.unofficial_type,
                 "platformStatus": item.platform_status,

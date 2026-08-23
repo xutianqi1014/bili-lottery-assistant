@@ -84,7 +84,12 @@ class ExecutionPlanService:
                 source_ids.update(context_source_ids)
                 blocked_sources = sorted(set(context_source_ids) & open_problem_articles)
                 family = _primary_family(contexts, request.family_order)
-                item_state, block_reason, action_plan = _item_state(family, blocked_sources)
+                source_section = _primary_source_section(contexts, request.family_order)
+                item_state, block_reason, action_plan = _item_state(
+                    family,
+                    blocked_sources,
+                    source_section,
+                )
                 if item_state == "planned":
                     planned_count += 1
                 elif item_state == "blocked":
@@ -139,7 +144,8 @@ class ExecutionPlanService:
                     canonical_url=activity.canonical_url,
                     title=activity.title,
                     family=_primary_family(contexts, request.family_order),
-                    mode="unknown",
+                    source_section=source_section,
+                    mode=source_section or "unknown",
                     unofficial_type="unknown",
                     platform_status="unchecked",
                     source_article_ids=item.source_article_ids,
@@ -253,7 +259,9 @@ def _order_activities(
 
 
 def _item_state(
-    family: str, blocked_sources: list[int]
+    family: str,
+    blocked_sources: list[int],
+    source_section: str | None = None,
 ) -> tuple[str, str | None, list[str]]:
     if blocked_sources:
         return (
@@ -261,7 +269,18 @@ def _item_state(
             "来源专栏存在问题网址，需要人工复核；本轮不收尾点赞。",
             ["manual_review", "recheck_source_problems"],
         )
-    if family == "official":
+    if source_section == "interactive":
+        # The source article has already told us this is an interactive
+        # section, but that section intentionally contains both official and
+        # non-official dynamics.  The opened page must still be classified;
+        # its like state is checked before that classification.
+        return "planned", None, [
+            "open_dynamic",
+            "inspect_activity_like_first",
+            "classify_official_or_unofficial",
+            "execute_if_eligible",
+        ]
+    if family == "official" or source_section == "reservation":
         return "planned", None, [
             "open_dynamic",
             "inspect_runtime_state",
@@ -289,6 +308,35 @@ def _primary_family(
         key=lambda family: rank.get(family, len(rank)),
     )
     return str(family)
+
+
+def _primary_source_section(
+    contexts: list[tuple[ActivityOrigin, DiscoverySelection, SourceArticle]],
+    family_order: tuple[str, ...],
+) -> str | None:
+    """Return the first explicit section hint in deterministic source order.
+
+    A globally de-duplicated dynamic can occur in more than one source
+    article.  Use the same family/rank/position precedence as the plan order,
+    then retain only the section names understood by the runtime UI.  This is
+    a provisional label; runtime inspection may replace ``RunItem.mode`` with
+    official, reservation, or unofficial.
+    """
+
+    family_rank = {family: index for index, family in enumerate(family_order)}
+    ordered = sorted(
+        contexts,
+        key=lambda row: (
+            family_rank.get(row[1].family, len(family_rank)),
+            row[1].selected_rank,
+            row[0].source_position,
+            row[2].id or 0,
+        ),
+    )
+    for origin, _selection, _article in ordered:
+        if origin.source_section in {"reservation", "interactive"}:
+            return origin.source_section
+    return None
 
 
 def _load_json_object(value: str) -> dict[str, object]:
