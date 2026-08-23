@@ -83,6 +83,25 @@ class _Page:
             return _Locator(1 if self.clicked and self.show_panel else 0)
         if selector == ".side-toolbar__action.like.is-active":
             return _Locator(1 if self.liked else 0)
+        if selector in {
+            ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+            ".side-toolbar__action.like.is-active",
+            '.content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > '
+            '.side-toolbar__action.like[aria-pressed="true"]',
+            '.content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > '
+            '.side-toolbar__action.like[data-state="active"]',
+            '.content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > '
+            '.side-toolbar__action.like[data-liked="true"]',
+        }:
+            return _Locator(1 if self.liked else 0)
+        if selector in {
+            ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+            ".side-toolbar__action.like",
+            ".content .sidebar-wrap .side-toolbar__action.like",
+            ".side-toolbar__action.like",
+            ".bili-dyn-action.like",
+        }:
+            return _Locator(1)
         return _Locator(0)
 
     def frame_locator(self, selector: str) -> _FrameLocator:
@@ -149,6 +168,14 @@ class _BoostedForwardPage(_Page):
             return _Locator(1)
         if selector == 'a[data-type="lottery"]':
             return _Locator(1, on_click=lambda: setattr(self, "clicked", True))
+        if selector in {
+            ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+            ".side-toolbar__action.like",
+            ".content .sidebar-wrap .side-toolbar__action.like",
+            ".side-toolbar__action.like",
+            ".bili-dyn-action.like",
+        }:
+            return _Locator(1)
         return _Locator(0)
 
 
@@ -199,6 +226,14 @@ class _ReservationPage:
 
     def locator(self, selector: str) -> _ReservationLocator:
         if selector in {"button", ".bili-dyn-card-reserve__card button"}:
+            return _ReservationLocator(self)
+        if selector in {
+            ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+            ".side-toolbar__action.like",
+            ".content .sidebar-wrap .side-toolbar__action.like",
+            ".side-toolbar__action.like",
+            ".bili-dyn-action.like",
+        }:
             return _ReservationLocator(self)
         if selector == "body":
             return _ReservationLocator(self, body=True)
@@ -367,6 +402,64 @@ async def test_reader_checks_like_before_collecting_type_specific_evidence():
     assert any(selector.endswith(".like.is-active") for selector in browser.page.selectors)
     assert 'a[data-type="lottery"]' not in browser.page.selectors
     assert not any("reserve" in selector for selector in browser.page.selectors)
+
+
+@pytest.mark.asyncio
+async def test_reader_accepts_modern_active_like_marker_before_type_reads():
+    class _ModernLikePage(_Page):
+        def locator(self, selector: str) -> _Locator:
+            if selector in {".bili-dyn-action.like.active", ".bili-dyn-action.like"}:
+                return _Locator(1)
+            return super().locator(selector)
+
+    class _ModernLikeBrowser(_Browser):
+        async def open(self, url: str) -> _ModernLikePage:
+            del url
+            self.page = _ModernLikePage(panel_text="开奖时间：2026年08月12日 18:00")
+            return self.page
+
+    browser = _ModernLikeBrowser()
+    result = await RuntimeActivityReader().read(
+        browser,
+        "400000001",
+        "https://www.bilibili.com/opus/400000001",
+    )
+
+    assert result.activity_like_state == "liked"
+    assert result.snapshot.activity_like_active is True
+    assert result.lottery_entry_opened is False
+
+
+@pytest.mark.asyncio
+async def test_reader_blocks_type_reads_when_like_control_is_unknown():
+    class _NoLikePage(_Page):
+        def locator(self, selector: str) -> _Locator:
+            if selector in {
+                ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+                ".side-toolbar__action.like",
+                ".content .sidebar-wrap .side-toolbar__action.like",
+                ".side-toolbar__action.like",
+                ".bili-dyn-action.like",
+            }:
+                return _Locator(0)
+            return super().locator(selector)
+
+    class _NoLikeBrowser(_Browser):
+        async def open(self, url: str) -> _NoLikePage:
+            del url
+            self.page = _NoLikePage(panel_text="开奖时间：2026年08月12日 18:00")
+            return self.page
+
+    browser = _NoLikeBrowser()
+    result = await RuntimeActivityReader().read(
+        browser,
+        "400000001",
+        "https://www.bilibili.com/opus/400000001",
+    )
+
+    assert result.activity_like_unknown is True
+    assert result.activity_like_reason_code == "ACTIVITY_LIKE_CONTROL_NOT_FOUND"
+    assert result.lottery_entry_opened is False
 
 
 @pytest.mark.asyncio

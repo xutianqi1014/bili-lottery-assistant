@@ -8,7 +8,11 @@ function stateLabel(state: string): string {
 
 function activityTypeLabel(profile: { activityTypes?: string[] }): string {
   const labels: Record<string, string> = {
-    official: "官方",
+    // ``official`` remains the internal runtime mode for the Bilibili
+    // interaction panel.  In the UI it is presented as the broader
+    // interaction category, which also contains ordinary non-official
+    // interaction dynamics.
+    official: "互动",
     unofficial: "非官方",
     reservation: "预约",
   };
@@ -49,15 +53,22 @@ function renderProblems(problems: Problem[]): string {
 }
 
 function renderActivityRow(row: ActivityPreview): string {
-  const sourceNames = row.origins.map((origin) => `${origin.family} · ${origin.sourcePosition}`).join("；");
-  const expectedFlow = row.origins.some((origin) => origin.family === "normal") ? "非官方" : "官方";
+  const sectionLabels: Record<string, string> = { reservation: "预约", interactive: "互动" };
+  const familyLabels: Record<string, string> = { official: "互动", normal: "非官方" };
+  const sourceNames = row.origins.map((origin) => `${sectionLabels[origin.sourceSection ?? ""] ?? familyLabels[origin.family] ?? origin.family} · ${origin.sourcePosition}`).join("；");
+  const expectedFlow = row.origins.some((origin) => origin.sourceSection === "reservation")
+    ? "预约"
+    : row.origins.some((origin) => origin.sourceSection === "interactive")
+      ? "互动"
+      : row.origins.some((origin) => origin.family === "normal") ? "非官方" : "互动";
   return `<tr><td><a href="${escapeHtml(row.url)}" target="_blank" rel="noreferrer">${escapeHtml(row.title || row.dynamicId)}</a><small>${escapeHtml(row.dynamicId)}</small></td><td>${escapeHtml(sourceNames || "未知来源")}</td><td><span class="state state-liked">${expectedFlow}</span></td><td>未检查</td><td>执行时读取页面分类、参与状态、点赞状态和评论要求</td></tr>`;
 }
 
 function renderDiscoverySnapshot(snapshot: WorkspaceSnapshot, discovery: Discovery): string {
   const activityRows = discovery.activities ?? [];
   const readlists = discovery.selectedReadlists.map((item) => `<span class="chip">${escapeHtml(String(item.title ?? ""))} · ${escapeHtml(String(item.url ?? ""))}</span>`).join("");
-  const rows = discovery.selections.map((row) => `<tr><td>${escapeHtml(row.family)}</td><td>${row.rank}</td><td>${row.position}</td><td><a href="${escapeHtml(row.url)}" target="_blank" rel="noreferrer">${escapeHtml(row.title || row.articleId)}</a></td><td><span class="state state-${row.likeState}">${stateLabel(row.likeState)}</span></td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.parseStatus || "未解析")}</td></tr>`).join("");
+  const familyLabels: Record<string, string> = { official: "互动", normal: "非官方" };
+  const rows = discovery.selections.map((row) => `<tr><td>${escapeHtml(familyLabels[row.family] ?? row.family)}</td><td>${row.rank}</td><td>${row.position}</td><td><a href="${escapeHtml(row.url)}" target="_blank" rel="noreferrer">${escapeHtml(row.title || row.articleId)}</a></td><td><span class="state state-${row.likeState}">${stateLabel(row.likeState)}</span></td><td>${escapeHtml(row.reason)}</td><td>${escapeHtml(row.parseStatus || "未解析")}</td></tr>`).join("");
   const activities = activityRows.map((row) => renderActivityRow(row)).join("");
   return `<section class="panel discovery-snapshot">
     <div class="panel-heading"><div><span class="kicker">DISCOVERY SNAPSHOT #${discovery.id}</span><h2>不可变发现预览</h2><p class="section-description">状态：${escapeHtml(discovery.state)}</p></div><button class="secondary" data-refresh>刷新</button></div>
@@ -83,7 +94,7 @@ export function renderDiscoveryPage(snapshot: WorkspaceSnapshot): RenderedWorksp
   return {
     eyebrow: "WORKSPACE / DISCOVERY",
     title: "来源发现",
-    subtitle: "读取配置 UP 的最新图文与专栏，筛出两个来源家族并完成全局去重。",
+    subtitle: "读取配置 UP 的最新图文与专栏，按来源规则筛选并完成全局去重。",
     content: `${renderSourceProfile(snapshot)}${snapshot.discovery ? renderDiscoverySnapshot(snapshot, snapshot.discovery) : `<section class="panel empty-state"><span class="kicker">DISCOVERY SNAPSHOT</span><h2>尚未执行只读发现</h2><p>确认登录状态后点击“开始只读发现”。发现阶段不会打开候选动态。</p></section>`}`,
   };
 }

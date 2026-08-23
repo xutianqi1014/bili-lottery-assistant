@@ -5,6 +5,7 @@ from backend.source_adapters.lottery_toolman.title_rules import (
     select_latest_readlist_per_family,
 )
 from backend.source_adapters.nuomi_backpack import NuomiBackpackSourceAdapter
+from backend.source_adapters.tomato_fries import TomatoFriesSourceAdapter
 
 
 def candidate(title, family, suffix, rl_id, updated=None):
@@ -58,3 +59,27 @@ def test_nuomi_keeps_newest_three_articles_by_source_position():
     selected = select_latest_entries(rows, 3)
 
     assert [row.position for row in selected] == [201, 200, 199]
+
+
+def test_tomato_fries_selects_only_the_named_interactive_collection():
+    selected = TomatoFriesSourceAdapter.select_readlists(
+        [
+            candidate("互动抽奖", SourceFamily.OFFICIAL, 0, "954367", updated=10),
+            candidate("转盘合集", SourceFamily.OFFICIAL, 0, "942325", updated=99),
+        ]
+    )
+
+    assert selected[SourceFamily.OFFICIAL].rl_id == "954367"
+
+
+def test_tomato_fries_selects_newest_three_by_published_at():
+    rows = [
+        SourceArticleCandidate("old", "https://x/old", "old", 99, published_at=100),
+        SourceArticleCandidate("newest", "https://x/newest", "newest", 1, published_at=300),
+        SourceArticleCandidate("middle", "https://x/middle", "middle", 2, published_at=200),
+        SourceArticleCandidate("unknown", "https://x/unknown", "unknown", 100),
+    ]
+
+    selected = TomatoFriesSourceAdapter.select_latest_entries_by_published_at(rows, 3)
+
+    assert [row.article_id for row in selected] == ["newest", "middle", "old"]

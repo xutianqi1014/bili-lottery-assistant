@@ -30,7 +30,7 @@ from .actions import (
 from .page_evidence import AUTHOR_NAME_SELECTORS
 
 UNOFFICIAL_WRITE_SELECTOR_VERSION = (
-    "unofficial_write_dom_v8-comment-repost-hydration-scoped-like-author-header"
+    "unofficial_write_dom_v9-comment-repost-hydration-scoped-like-author-header"
 )
 
 LIKE_SELECTOR = ".side-toolbar__action.like"
@@ -48,15 +48,27 @@ LIKE_CONTENT_SCOPED_SELECTOR = ".content .sidebar-wrap .side-toolbar__action.lik
 LIKE_ACTIVE_SELECTOR = ".side-toolbar__action.like.is-active"
 LIKE_ACTIVE_SELECTORS = (
     f"{LIKE_SCOPED_SELECTOR}.is-active",
+    f"{LIKE_SCOPED_SELECTOR}.active",
     f'{LIKE_SCOPED_SELECTOR}[aria-pressed="true"]',
     f'{LIKE_SCOPED_SELECTOR}[data-state="active"]',
     f'{LIKE_SCOPED_SELECTOR}[data-liked="true"]',
     f'{LIKE_SCOPED_SELECTOR}[class*="liked"]',
     LIKE_ACTIVE_SELECTOR,
+    ".side-toolbar__action.like.active",
     '.side-toolbar__action.like[aria-pressed="true"]',
     '.side-toolbar__action.like[data-state="active"]',
     '.side-toolbar__action.like[data-liked="true"]',
     '.side-toolbar__action.like[class*="liked"]',
+    ".bili-dyn-action.like.is-active",
+    ".bili-dyn-action.like.active",
+    '.bili-dyn-action.like[aria-pressed="true"]',
+    '.bili-dyn-action.like[data-state="active"]',
+    '.bili-dyn-action.like[data-liked="true"]',
+    '[data-like-state="liked"]',
+    '[aria-label*="已点赞"]',
+    '[aria-label*="取消点赞"]',
+    '[title*="已点赞"]',
+    '[title*="取消点赞"]',
 )
 FORWARD_SELECTOR = ".side-toolbar__action.forward"
 COMMENT_EDITOR_SELECTOR = (

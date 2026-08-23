@@ -5,6 +5,7 @@ from backend.activity_engine.models import ActivityMode, ActivitySnapshot
 from backend.activity_engine.source_policy import (
     DEFAULT_ACTIVITY_MODES,
     NUOMI_ACTIVITY_MODES,
+    TOMATO_FRIES_ACTIVITY_MODES,
     policy_from_profile,
 )
 
@@ -25,6 +26,14 @@ def test_builtin_source_policies_have_disjoint_allowed_type_sets() -> None:
     assert nuomi.allowed_modes == NUOMI_ACTIVITY_MODES
     assert default.allowed_type_names == ("official", "unofficial")
     assert nuomi.allowed_type_names == ("official", "reservation")
+
+    tomato = policy_from_profile(
+        source_key="tomato_fries",
+        adapter_key="tomato_fries_v1",
+        config_json=json.dumps({"activityTypes": ["official", "unofficial", "reservation"]}),
+    )
+    assert tomato.allowed_modes == TOMATO_FRIES_ACTIVITY_MODES
+    assert tomato.allowed_type_names == ("official", "unofficial", "reservation")
 
 
 def test_default_source_keeps_reservation_distinct_from_unofficial() -> None:

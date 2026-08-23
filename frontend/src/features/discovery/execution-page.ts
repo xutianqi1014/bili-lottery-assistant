@@ -70,14 +70,17 @@ function renderJumpCurrentButton(plan: RunPlan): string {
 
 function renderPlanItem(item: RunItem, current: boolean): string {
   const modeLabels: Record<string, string> = {
-    official: "官方",
+    // ``official`` is retained internally because it selects the official
+    // Bilibili interaction-panel flow.  The displayed category is "互动".
+    official: "互动",
     reservation: "预约",
     unofficial: "非官方",
+    interactive: "互动",
   };
   // Before runtime inspection the mode is unknown; retain the discovery
   // family as a provisional label.  Once inspected, reservation remains a
   // first-class label instead of being collapsed into official/unofficial.
-  const flow = modeLabels[item.mode] ?? (item.family === "official" ? "官方" : "非官方");
+  const flow = modeLabels[item.mode] ?? (item.family === "official" ? "互动" : "非官方");
   const currentAttributes = current
     ? ` class="run-plan-current-item" aria-current="true" tabindex="-1"`
     : "";
@@ -91,8 +94,9 @@ function renderAction(plan: RunPlan): string {
   }
   const hasOfficial = plan.items.some((item) => item.family === "official");
   const hasUnofficial = plan.items.some((item) => item.family !== "official");
+  const hasInteractive = plan.items.some((item) => item.sourceSection === "interactive" || item.mode === "interactive");
   if (plan.state === "confirmed_waiting_user") {
-    const label = plan.officialAutomationEnabled && hasOfficial && !hasUnofficial ? "开始官方自动执行" : "开始执行计划";
+    const label = plan.officialAutomationEnabled && hasOfficial && !hasUnofficial && !hasInteractive ? "开始官方自动执行" : "开始执行计划";
     return `<button data-start-run>${label}</button>`;
   }
   // A blocked/interrupted item may have been completed manually in Bilibili.
@@ -111,12 +115,14 @@ function renderAction(plan: RunPlan): string {
 function executionPolicy(plan: RunPlan): string {
   const hasOfficial = plan.items.some((item) => item.family === "official");
   const hasUnofficial = plan.items.some((item) => item.family !== "official");
+  const hasInteractive = plan.items.some((item) => item.sourceSection === "interactive" || item.mode === "interactive");
   const deepseekPolicy = plan.deepseekConfigured ? "DeepSeek 已配置" : "DeepSeek 未配置（非官方条目会在写入前安全阻塞）";
   if (plan.unofficialAutomationEnabled && hasUnofficial) {
     const min = plan.unofficialAutomationDelayMinSec ?? 1;
     const max = plan.unofficialAutomationDelayMaxSec ?? 2;
     return `非官方动态将自动执行评论、勾选“同时转发到我的动态”、转发、点赞和关注；先检查动态点赞，已点赞直接跳过；评论由 DeepSeek 生成并补全要求的话题及固定 @好友（${deepseekPolicy}）。每步等待 ${min}–${max} 秒；评论发布点击返回 COMMENT_SUBMIT_ACCEPTED，不复检评论列表，转发、点赞和关注继续确认终态，未知结果停止且不自动重试。`;
   }
+  if (hasInteractive) return "互动分段已完成来源预分类，但其中可能同时包含官方和非官方动态；打开后先检查点赞，已点赞直接跳过，再按页面实际信号选择对应流程。";
   if (plan.officialAutomationEnabled && hasOfficial) return "官方条目会按计划顺序自动处理；每条得到明确终态后才进入下一条。";
   return "非官方自动化未启用；每次只打开当前一条，生成动作策略后暂停且不写入。";
 }

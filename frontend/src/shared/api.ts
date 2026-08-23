@@ -49,6 +49,7 @@ export type ActivityPreview = {
     sourceArticleTitle: string;
     family: string;
     sourcePosition: number;
+    sourceSection?: string | null;
   }>;
   runtimeInspectedAt: string | null;
 };
@@ -60,6 +61,7 @@ export type RunItem = {
   url: string;
   title: string;
   family: string;
+  sourceSection: string | null;
   mode: string;
   unofficialType: string;
   platformStatus: string;

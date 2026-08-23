@@ -8,6 +8,7 @@ read-only queue plus audit statistics.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -16,6 +17,20 @@ from .html_parser import HtmlNode, nearest_line_node, text_before_node
 _DYNAMIC_PATH_RE = re.compile(r"^/opus/(\d+)/?$", re.IGNORECASE)
 _T_PATH_RE = re.compile(r"^/(\d+)/?$", re.IGNORECASE)
 _WHITESPACE_RE = re.compile(r"\s+")
+_SECTION_HEADINGS = (
+    ("charge", r"充电抽奖"),
+    ("reservation", r"预约抽奖|预约有奖"),
+    ("interactive", r"互动抽奖|官方抽奖|非官方抽奖|官抽|非官抽"),
+)
+_SECTION_PARTICIPATION_MARKERS = (
+    (
+        "charge",
+        r"充电(?:抽奖|[，,、\s]+(?:即可参与|参与|关注|转发|点赞))|"
+        r"关注[，,、\s]*充电[，,、\s]*即可参与",
+    ),
+    ("reservation", r"预约[，,、\s]*(?:即可参与|参与)"),
+    ("interactive", r"关注[^。\n]{0,24}(?:转发|点赞)|(?:转发|点赞)[^。\n]{0,24}关注"),
+)
 
 
 @dataclass(frozen=True)
@@ -24,6 +39,7 @@ class CollectedActivity:
     canonical_url: str
     title: str
     source_position: int
+    source_section: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,11 +95,55 @@ def is_other_lottery_collection_link(anchor: HtmlNode, fallback: HtmlNode) -> bo
     line_text = _line_text(anchor, fallback)
     anchor_text = clean_text(anchor.text_content())
     text = f"{anchor_text} {line_text}"
+    has_previous_collection_portal = bool(
+        re.search(r"(?:上期|上一期)\s*传送门", text)
+    )
     has_collection_name = bool(re.search(r"(?:官方\s*)?抽奖(?:合集|汇总)|开奖(?:合集|汇总)", text))
     is_full_result_section = bool(
         re.search(r"开奖部分", text) and re.search(r"(?:全部版|全版)", text)
     )
-    return has_collection_name or is_full_result_section
+    return has_previous_collection_portal or has_collection_name or is_full_result_section
+
+
+def _section_match(value: str, markers: tuple[tuple[str, str], ...]) -> str | None:
+    matches: list[tuple[int, str]] = []
+    for kind, pattern in markers:
+        match = re.search(pattern, value)
+        if match is not None:
+            matches.append((match.start(), kind))
+    if not matches:
+        return None
+    return max(matches, key=lambda item: item[0])[1]
+
+
+def section_heading_kind_for_text(text: str) -> str | None:
+    """Return an explicit charge/reservation/interactive section heading."""
+
+    return _section_match(clean_text(text), _SECTION_HEADINGS)
+
+
+def section_kind_for_text(text: str) -> str | None:
+    """Infer a source-article lottery section from visible text.
+
+    A mixed collection can place charge, reservation and interactive rows in
+    one article.  The headings are not a stable DOM element, so this helper
+    deliberately uses visible text only.  Explicit headings take precedence
+    over participation wording, preventing a charge row that also says
+    “关注/转发/点赞” from being promoted into the interactive section.
+    """
+
+    value = clean_text(text)
+    heading = section_heading_kind_for_text(value)
+    if heading is not None:
+        return heading
+    # A single entry line can contain several generic words such as
+    # “关注/转发/点赞”.  Prefer the source-specific participation phrase in
+    # a stable order instead of choosing whichever marker happens to start
+    # furthest to the right.
+    for kind, pattern in _SECTION_PARTICIPATION_MARKERS:
+        if re.search(pattern, value):
+            return kind
+    return None
 
 
 def start_kind_for_anchor(anchor: HtmlNode, fallback: HtmlNode) -> str:
@@ -128,8 +188,17 @@ def collect_queue(
     source_url: str,
     *,
     skip_pinned: bool = True,
+    include_sections: Collection[str] | None = None,
+    excluded_sections: Collection[str] | None = None,
 ) -> CollectedQueue:
-    """Apply the userscript's queue rules to a parsed source article."""
+    """Apply the userscript's queue rules to a parsed source article.
+
+    ``include_sections`` and ``excluded_sections`` are optional because the
+    original sources use a single mixed queue.  A source-specific adapter can
+    provide them when its article explicitly groups charge/reservation/
+    interactive rows; unknown sections are excluded when an include set is
+    supplied (fail closed rather than accidentally charging or writing).
+    """
 
     blocks = list(content_root.children)
     all_items: list[CollectedActivity] = []
@@ -140,10 +209,28 @@ def collect_queue(
     pinned_end_index = find_pinned_end_index(blocks) if skip_pinned else 0
     saw_pinned = pinned_end_index >= 0
     start_index = pinned_end_index if saw_pinned else 0
+    included = set(include_sections) if include_sections is not None else None
+    excluded = set(excluded_sections or ())
+    current_section: str | None = None
 
     for block_index, block in enumerate(blocks):
+        detected_section = section_heading_kind_for_text(block.text_content())
+        if detected_section is None:
+            detected_section = section_kind_for_text(block.text_content())
+        if detected_section is not None:
+            current_section = detected_section
         anchors = list(block.descendants("a"))
         for anchor in anchors:
+            line = nearest_line_node(anchor, block)
+            line_text = line.text_content()
+            line_section = section_heading_kind_for_text(line_text)
+            if line_section is None:
+                line_section = section_kind_for_text(line_text)
+            effective_section = line_section or current_section
+            if included is not None and effective_section not in included:
+                continue
+            if effective_section in excluded:
+                continue
             href = anchor.attrs.get("href", "")
             dynamic = dynamic_from_url(href, source_url)
             if dynamic is None:
@@ -159,6 +246,7 @@ def collect_queue(
                 canonical_url=url,
                 title=clean_text(anchor.text_content()) or url,
                 source_position=len(all_items) + 1,
+                source_section=effective_section,
             )
             item_index = len(all_items)
             all_items.append(item)
@@ -197,6 +285,7 @@ def collect_queue(
                 canonical_url=item.canonical_url,
                 title=item.title,
                 source_position=len(unique) + 1,
+                source_section=item.source_section,
             )
         )
     return CollectedQueue(

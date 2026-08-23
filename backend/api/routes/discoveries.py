@@ -104,6 +104,7 @@ def get_discovery(discovery_id: int, request: Request) -> dict[str, Any]:
                             "sourceArticleTitle": article.title,
                             "family": selection.family,
                             "sourcePosition": origin.source_position,
+                            "sourceSection": origin.source_section,
                         }
                         for origin, selection, article in contexts
                     ],

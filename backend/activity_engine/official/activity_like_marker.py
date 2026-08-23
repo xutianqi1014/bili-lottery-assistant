@@ -13,6 +13,26 @@ from typing import Any, Protocol
 
 ACTIVITY_LIKE_SELECTOR = ".side-toolbar__action.like"
 ACTIVITY_LIKE_ACTIVE_SELECTOR = ".side-toolbar__action.like.is-active"
+ACTIVITY_LIKE_SELECTORS = (
+    ".content .sidebar-wrap .side-toolbar__action.like",
+    ".bili-dyn-action.like",
+    ACTIVITY_LIKE_SELECTOR,
+)
+ACTIVITY_LIKE_ACTIVE_SELECTORS = (
+    ACTIVITY_LIKE_ACTIVE_SELECTOR,
+    ".side-toolbar__action.like.active",
+    '.side-toolbar__action.like[aria-pressed="true"]',
+    '.side-toolbar__action.like[data-state="active"]',
+    '.side-toolbar__action.like[data-liked="true"]',
+    ".bili-dyn-action.like.is-active",
+    ".bili-dyn-action.like.active",
+    '.bili-dyn-action.like[aria-pressed="true"]',
+    '.bili-dyn-action.like[data-state="active"]',
+    '.bili-dyn-action.like[data-liked="true"]',
+    '[data-like-state="liked"]',
+    '[aria-label*="已点赞"]',
+    '[aria-label*="取消点赞"]',
+)
 _POLL_ATTEMPTS = 30
 _POLL_INTERVAL_MS = 500
 
@@ -29,6 +49,7 @@ class ActivityLikeMarkerResult:
     code: str
     message: str
     click_attempted: bool = False
+    selector: str | None = None
 
 
 class ActivityLikeMarkerPage(Protocol):
@@ -48,11 +69,12 @@ async def inspect_activity_like_marker(
 
     try:
         await page.wait_for_selector(ACTIVITY_LIKE_SELECTOR, timeout=timeout_ms)
-    except Exception as exc:  # noqa: BLE001 - missing marker must stop automation
-        return _unknown(
-            "OFFICIAL_ACTIVITY_LIKE_READ_UNKNOWN",
-            f"official activity like marker could not be loaded: {type(exc).__name__}",
-        )
+    except Exception as exc:  # noqa: BLE001 - try newer layout selectors
+        if not await _has_any_like_control(page):
+            return _unknown(
+                "OFFICIAL_ACTIVITY_LIKE_READ_UNKNOWN",
+                f"official activity like marker could not be loaded: {type(exc).__name__}",
+            )
     return await _read_marker_counts(page)
 
 
@@ -68,7 +90,7 @@ async def ensure_activity_like_marker(
         return current
 
     try:
-        like_button = page.locator(ACTIVITY_LIKE_SELECTOR)
+        like_button = page.locator(current.selector or ACTIVITY_LIKE_SELECTOR)
         # Do not force a coordinate click through a modal overlay.  The caller
         # must first expose the outer toolbar so Playwright can verify that the
         # actual like control receives the click.
@@ -109,12 +131,26 @@ async def _read_marker_counts(
     click_attempted: bool = False,
 ) -> ActivityLikeMarkerResult:
     try:
-        like_count = await page.locator(ACTIVITY_LIKE_SELECTOR).count()
-        active_count = await page.locator(ACTIVITY_LIKE_ACTIVE_SELECTOR).count()
+        like_count, like_selector = await _read_unique_like_control(page)
+        active_counts: list[int] = []
+        for selector in ACTIVITY_LIKE_ACTIVE_SELECTORS:
+            try:
+                active_counts.append(int(await page.locator(selector).count()))
+            except Exception:
+                # Older page adapters may reject selectors from newer layout
+                # variants; an unsupported selector is not itself an
+                # ambiguous active marker.
+                continue
     except Exception as exc:  # noqa: BLE001 - ambiguous page state must stop
         return _unknown(
             "OFFICIAL_ACTIVITY_LIKE_READ_UNKNOWN",
             f"official activity like marker could not be read: {type(exc).__name__}",
+            click_attempted=click_attempted,
+        )
+    if like_count == 0:
+        return _unknown(
+            "OFFICIAL_ACTIVITY_LIKE_READ_UNKNOWN",
+            "official activity like marker could not be found",
             click_attempted=click_attempted,
         )
     if like_count != 1:
@@ -123,12 +159,20 @@ async def _read_marker_counts(
             f"expected one official activity like marker, found {like_count}",
             click_attempted=click_attempted,
         )
+    if any(count > 1 for count in active_counts):
+        return _unknown(
+            "OFFICIAL_ACTIVITY_LIKE_MARKER_AMBIGUOUS",
+            "more than one active official activity like marker was found",
+            click_attempted=click_attempted,
+        )
+    active_count = 1 if any(count == 1 for count in active_counts) else 0
     if active_count == 1:
         return ActivityLikeMarkerResult(
             ActivityLikeMarkerState.LIKED,
             "OFFICIAL_ACTIVITY_ALREADY_LIKED",
             "official activity like marker is active",
             click_attempted=click_attempted,
+            selector=like_selector,
         )
     if active_count == 0:
         return ActivityLikeMarkerResult(
@@ -136,6 +180,7 @@ async def _read_marker_counts(
             "OFFICIAL_ACTIVITY_NOT_LIKED",
             "official activity like marker is not active",
             click_attempted=click_attempted,
+            selector=like_selector,
         )
     return _unknown(
         "OFFICIAL_ACTIVITY_LIKE_MARKER_AMBIGUOUS",
@@ -149,10 +194,33 @@ def _unknown(
     message: str,
     *,
     click_attempted: bool = False,
+    selector: str | None = None,
 ) -> ActivityLikeMarkerResult:
     return ActivityLikeMarkerResult(
         ActivityLikeMarkerState.UNKNOWN,
         code,
         message,
         click_attempted=click_attempted,
+        selector=selector,
     )
+
+
+async def _has_any_like_control(page: ActivityLikeMarkerPage) -> bool:
+    for selector in ACTIVITY_LIKE_SELECTORS:
+        try:
+            if int(await page.locator(selector).count()) > 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+async def _read_unique_like_control(page: ActivityLikeMarkerPage) -> tuple[int, str | None]:
+    for selector in ACTIVITY_LIKE_SELECTORS:
+        try:
+            count = int(await page.locator(selector).count())
+        except Exception:
+            continue
+        if count > 0:
+            return count, selector
+    return 0, None

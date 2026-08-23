@@ -2,31 +2,33 @@
 
 本项目是一个本机运行的 B 站互动抽奖助手，使用 HTML 控制台操作，浏览器端通过 Playwright 执行页面可见的读写动作。
 
-当前版本：`0.1.3`
+当前版本：`0.1.4`
 
 当前内置来源：
 
 - MID `100680137`，适配器 `lottery_toolman_v1`，按“抽奖合集/官方抽奖合集”规则发现，仅允许官方和非官方动态；
 - MID `492426375`（糯米是个背包），适配器 `nuomi_backpack_v1`，按年份合集规则发现，仅允许官方和预约动态。
+- MID `3546836235193146`（番茄薯条喵），适配器 `tomato_fries_v1`，只选择“互动抽奖”合集并取最新 3 篇；跳过上期传送门和充电抽奖，仅允许官方、非官方和预约动态。
 
 来源页：
 
 - <https://space.bilibili.com/100680137/upload/opus>
 - <https://space.bilibili.com/492426375/upload/opus>
+- <https://space.bilibili.com/3546836235193146/upload/opus>
 
 ## 快速使用
 
 Windows 用户建议直接从 GitHub Release 下载：
 
-<https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.3>
+<https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.4>
 
 由于 GitHub 对大文件上传连接可能中断，Release 将 Windows 包拆为 `.001` 至 `.014` 共 14 个分卷。请下载这 14 个同名分卷并放到同一目录，在该目录执行以下命令合并：
 
 ```powershell
-cmd /c copy /b BiliLotteryAssistant-windows-x64-v0.1.3.zip.001+BiliLotteryAssistant-windows-x64-v0.1.3.zip.002+BiliLotteryAssistant-windows-x64-v0.1.3.zip.003+BiliLotteryAssistant-windows-x64-v0.1.3.zip.004+BiliLotteryAssistant-windows-x64-v0.1.3.zip.005+BiliLotteryAssistant-windows-x64-v0.1.3.zip.006+BiliLotteryAssistant-windows-x64-v0.1.3.zip.007+BiliLotteryAssistant-windows-x64-v0.1.3.zip.008+BiliLotteryAssistant-windows-x64-v0.1.3.zip.009+BiliLotteryAssistant-windows-x64-v0.1.3.zip.010+BiliLotteryAssistant-windows-x64-v0.1.3.zip.011+BiliLotteryAssistant-windows-x64-v0.1.3.zip.012+BiliLotteryAssistant-windows-x64-v0.1.3.zip.013+BiliLotteryAssistant-windows-x64-v0.1.3.zip.014 BiliLotteryAssistant-windows-x64-v0.1.3.zip
+cmd /c copy /b BiliLotteryAssistant-windows-x64-v0.1.4.zip.001+BiliLotteryAssistant-windows-x64-v0.1.4.zip.002+BiliLotteryAssistant-windows-x64-v0.1.4.zip.003+BiliLotteryAssistant-windows-x64-v0.1.4.zip.004+BiliLotteryAssistant-windows-x64-v0.1.4.zip.005+BiliLotteryAssistant-windows-x64-v0.1.4.zip.006+BiliLotteryAssistant-windows-x64-v0.1.4.zip.007+BiliLotteryAssistant-windows-x64-v0.1.4.zip.008+BiliLotteryAssistant-windows-x64-v0.1.4.zip.009+BiliLotteryAssistant-windows-x64-v0.1.4.zip.010+BiliLotteryAssistant-windows-x64-v0.1.4.zip.011+BiliLotteryAssistant-windows-x64-v0.1.4.zip.012+BiliLotteryAssistant-windows-x64-v0.1.4.zip.013+BiliLotteryAssistant-windows-x64-v0.1.4.zip.014 BiliLotteryAssistant-windows-x64-v0.1.4.zip
 ```
 
-再解压合并后的 `BiliLotteryAssistant-windows-x64-v0.1.3.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
+再解压合并后的 `BiliLotteryAssistant-windows-x64-v0.1.4.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
 
 <http://127.0.0.1:8787/>
 
@@ -59,9 +61,12 @@ python -m backend.launcher
 
 ## 当前边界
 
-- 当前内置两个 UP 来源；每个 UP 使用独立适配器，后续新增 UP 仍需单独配置其合集结构和适配器。
+- 当前内置三个 UP 来源；每个 UP 使用独立适配器，后续新增 UP 仍需单独配置其合集结构和适配器。
+- `tomato_fries_v1` 只读取名称为“互动抽奖”的合集（不会选择“转盘合集”），按专栏发布时间取最新 3 篇。正文按可见分区跳过“上期传送门”和“充电抽奖”，只保留预约和互动抽奖；互动抽奖继续按官方/非官方运行时流程分类。
 - `nuomi_backpack_v1` 选择名称为四位年份的最大合集（当前发现到 `2026`，readlist `rl1016769`），从中取序号最大的 3 篇专栏。该合集中的互动抽奖按官方流程执行；正文出现“预约有奖”卡片的动态按独立预约流程执行；直播已撤销导致卡片只显示“已撤销”时也会安全跳过。
 - 加码动态若只在引用原动态中出现官方抽奖入口，会按外层动态进入非官方加码流程，不会误打开内层互动抽奖面板。
+- 来源专栏中的“互动抽奖”分段会在计划中显示为“互动”临时标签；动态打开后先检查点赞，已点赞直接跳过，唯一未点赞后才按页面事实选择官方、预约或非官方流程。点赞状态缺失或不唯一时会在类型判断前安全暂停。
+- 界面中的原“官方”分类标签统一显示为“互动”；`official` 仍是内部运行模式，用于选择官方互动抽奖面板流程，不改变执行器和安全门。
 - 只读发现阶段不会打开候选动态；正式执行时才读取动态页面状态。
 - 官方互动抽奖和非官方互动抽奖均默认自动执行，但遇到登录、验证码、风控、控件不唯一或终态未知时会立即停止当前条目，并记录问题网址，不自动重试。
 - DeepSeek Key 仅保存在当前本地服务进程内，不写入运行计划、SQLite 或日志；关闭服务后需要重新输入。

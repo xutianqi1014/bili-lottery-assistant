@@ -171,6 +171,7 @@ class DiscoveryService:
                             activity,
                             ref.source_position,
                             discovery_id,
+                            ref.source_section,
                         )
                 session.commit()
             stats["selectedArticles"] += 1

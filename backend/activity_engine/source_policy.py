@@ -27,6 +27,9 @@ DEFAULT_ACTIVITY_MODES = frozenset(
 NUOMI_ACTIVITY_MODES = frozenset(
     {ActivityMode.OFFICIAL, ActivityMode.RESERVATION}
 )
+TOMATO_FRIES_ACTIVITY_MODES = frozenset(
+    {ActivityMode.OFFICIAL, ActivityMode.UNOFFICIAL, ActivityMode.RESERVATION}
+)
 
 
 @dataclass(frozen=True)
@@ -67,11 +70,12 @@ def policy_from_profile(
     raw_types = config.get("activityTypes")
     allowed = _parse_activity_types(raw_types)
     if not allowed:
-        allowed = (
-            NUOMI_ACTIVITY_MODES
-            if adapter_key == "nuomi_backpack_v1"
-            else DEFAULT_ACTIVITY_MODES
-        )
+        if adapter_key == "nuomi_backpack_v1":
+            allowed = NUOMI_ACTIVITY_MODES
+        elif adapter_key == "tomato_fries_v1":
+            allowed = TOMATO_FRIES_ACTIVITY_MODES
+        else:
+            allowed = DEFAULT_ACTIVITY_MODES
     return SourceActivityPolicy(
         source_key=source_key,
         allowed_modes=frozenset(allowed),

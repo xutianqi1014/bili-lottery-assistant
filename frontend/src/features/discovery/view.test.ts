@@ -289,7 +289,7 @@ describe("DiscoveryView no-preflight workflow", () => {
     expect(root.innerHTML).toContain("来源专栏收尾判定");
     expect(root.innerHTML).toContain("run-plan-col-dynamic");
     expect(root.innerHTML).not.toContain("即时结果");
-    expect(root.innerHTML).toContain('<span class="family-label">官方</span>');
+    expect(root.innerHTML).toContain('<span class="family-label">互动</span>');
     expect(root.innerHTML).not.toContain("官方 / 执行时检查");
     expect(root.innerHTML).not.toContain("写操作边界");
     expect(root.innerHTML).not.toContain("官方自动执行清单");

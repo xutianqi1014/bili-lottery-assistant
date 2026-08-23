@@ -38,6 +38,10 @@ class ActivityRef:
     canonical_url: str
     source_position: int
     title: str = ""
+    # A source article may explicitly group its links into charge,
+    # reservation, or interactive sections.  This is a discovery-time hint;
+    # the opened dynamic still gets a runtime classification before writes.
+    source_section: str | None = None
 
 
 @dataclass(frozen=True)
