@@ -2,7 +2,7 @@
 
 本项目是一个本机运行的 B 站互动抽奖助手，使用 HTML 控制台操作，浏览器端通过 Playwright 执行页面可见的读写动作。
 
-当前版本：`0.1.4`
+当前版本：`0.1.5`
 
 当前内置来源：
 
@@ -20,15 +20,17 @@
 
 Windows 用户建议直接从 GitHub Release 下载：
 
-<https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.4>
+<https://github.com/xutianqi1014/bili-lottery-assistant/releases/tag/v0.1.5>
 
-由于 GitHub 对大文件上传连接可能中断，Release 将 Windows 包拆为 `.001` 至 `.014` 共 14 个分卷。请下载这 14 个同名分卷并放到同一目录，在该目录执行以下命令合并：
+由于 GitHub 对大文件上传连接可能中断，Release 将 Windows 包拆为 `.001` 至 `.018` 共 18 个分卷。请下载这 18 个同名分卷并放到同一目录，在该目录执行以下命令合并：
 
 ```powershell
-cmd /c copy /b BiliLotteryAssistant-windows-x64-v0.1.4.zip.001+BiliLotteryAssistant-windows-x64-v0.1.4.zip.002+BiliLotteryAssistant-windows-x64-v0.1.4.zip.003+BiliLotteryAssistant-windows-x64-v0.1.4.zip.004+BiliLotteryAssistant-windows-x64-v0.1.4.zip.005+BiliLotteryAssistant-windows-x64-v0.1.4.zip.006+BiliLotteryAssistant-windows-x64-v0.1.4.zip.007+BiliLotteryAssistant-windows-x64-v0.1.4.zip.008+BiliLotteryAssistant-windows-x64-v0.1.4.zip.009+BiliLotteryAssistant-windows-x64-v0.1.4.zip.010+BiliLotteryAssistant-windows-x64-v0.1.4.zip.011+BiliLotteryAssistant-windows-x64-v0.1.4.zip.012+BiliLotteryAssistant-windows-x64-v0.1.4.zip.013+BiliLotteryAssistant-windows-x64-v0.1.4.zip.014 BiliLotteryAssistant-windows-x64-v0.1.4.zip
+cmd /c copy /b BiliLotteryAssistant-windows-x64-v0.1.5.zip.001+BiliLotteryAssistant-windows-x64-v0.1.5.zip.002+BiliLotteryAssistant-windows-x64-v0.1.5.zip.003+BiliLotteryAssistant-windows-x64-v0.1.5.zip.004+BiliLotteryAssistant-windows-x64-v0.1.5.zip.005+BiliLotteryAssistant-windows-x64-v0.1.5.zip.006+BiliLotteryAssistant-windows-x64-v0.1.5.zip.007+BiliLotteryAssistant-windows-x64-v0.1.5.zip.008+BiliLotteryAssistant-windows-x64-v0.1.5.zip.009+BiliLotteryAssistant-windows-x64-v0.1.5.zip.010+BiliLotteryAssistant-windows-x64-v0.1.5.zip.011+BiliLotteryAssistant-windows-x64-v0.1.5.zip.012+BiliLotteryAssistant-windows-x64-v0.1.5.zip.013+BiliLotteryAssistant-windows-x64-v0.1.5.zip.014+BiliLotteryAssistant-windows-x64-v0.1.5.zip.015+BiliLotteryAssistant-windows-x64-v0.1.5.zip.016+BiliLotteryAssistant-windows-x64-v0.1.5.zip.017+BiliLotteryAssistant-windows-x64-v0.1.5.zip.018 BiliLotteryAssistant-windows-x64-v0.1.5.zip
 ```
 
-再解压合并后的 `BiliLotteryAssistant-windows-x64-v0.1.4.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
+合并后的 ZIP SHA-256 为 `8C1D958CBFFE0B578BB0D013A51AB056804F39FB498869F568651E22321F8571`；目录版 EXE SHA-256 为 `B6C98AC682C0F14D7B92C1EA780A3F0D36E61B87F78CA4864247580FC385F166`。
+
+再解压合并后的 `BiliLotteryAssistant-windows-x64-v0.1.5.zip`，保持目录结构不变，然后双击目录内的 `BiliLotteryAssistant.exe`。程序会自动启动本地服务并打开：
 
 <http://127.0.0.1:8787/>
 
