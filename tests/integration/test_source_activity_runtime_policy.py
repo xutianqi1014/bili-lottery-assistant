@@ -21,9 +21,11 @@ class _Reader:
         snapshot: ActivitySnapshot,
         *,
         dynamic_unavailable: bool = False,
+        activity_like_unknown: bool = False,
     ) -> None:
         self.snapshot = snapshot
         self.dynamic_unavailable = dynamic_unavailable
+        self.activity_like_unknown = activity_like_unknown
 
     async def read(self, *args, **kwargs) -> RuntimeActivityRead:
         del args, kwargs
@@ -35,6 +37,11 @@ class _Reader:
             reservation_entry_present=self.snapshot.has_reservation_entry,
             reservation_control_text=self.snapshot.reservation_control_text,
             nonofficial_evidence_codes=self.snapshot.nonofficial_dom_evidence,
+            activity_like_state=("unknown" if self.activity_like_unknown else "not_checked"),
+            activity_like_reason_code=(
+                "ACTIVITY_LIKE_CONTROL_NOT_FOUND" if self.activity_like_unknown else ""
+            ),
+            activity_like_unknown=self.activity_like_unknown,
         )
 
 
@@ -194,6 +201,40 @@ async def test_liked_dynamic_skips_before_type_allowlist() -> None:
         assert saved.result_code == "ALREADY_PARTICIPATED_LIKED"
         assert saved.platform_status == "already_liked"
         inspection = json.loads(saved.runtime_inspection_json)
+        assert inspection["typeClassificationSkipped"] is True
+
+
+@pytest.mark.asyncio
+async def test_unknown_like_state_is_not_rewritten_as_source_type_mismatch() -> None:
+    engine = create_engine("sqlite://")
+    init_database(engine)
+    snapshot = ActivitySnapshot(
+        "1236380630515712009",
+        "https://www.bilibili.com/opus/1236380630515712009",
+        "动态壳页面",
+        actionable_text="动态壳页面",
+    )
+    runner, run, item = _seed(
+        engine,
+        {"activityTypes": ["official", "unofficial", "reservation"]},
+    )
+    runner.reader = _Reader(snapshot, activity_like_unknown=True)
+
+    policy = runner._source_activity_policy(run, item)
+    continued = await runner._execute_configured_automatic_item(run, item, policy)
+
+    assert continued is False
+    with Session(engine) as session:
+        saved = session.exec(
+            select(RunItem).where(RunItem.activity_id == item.activity_id)
+        ).one()
+        assert saved.state == "waiting_user"
+        assert saved.mode == "unknown"
+        assert saved.result_code == "ACTIVITY_LIKE_STATE_UNKNOWN"
+        assert saved.result_message is not None
+        assert "点赞状态" in saved.result_message
+        inspection = json.loads(saved.runtime_inspection_json)
+        assert inspection["resultCode"] == "ACTIVITY_LIKE_STATE_UNKNOWN"
         assert inspection["typeClassificationSkipped"] is True
 
 

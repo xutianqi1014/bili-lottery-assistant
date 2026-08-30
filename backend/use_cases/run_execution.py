@@ -56,6 +56,13 @@ from backend.use_cases.unofficial_participation_execution import (
 )
 
 DYNAMIC_UNAVAILABLE_SKIP_CODE = "DYNAMIC_UNAVAILABLE_SKIPPED"
+_POLICY_CHECKABLE_ACTIVITY_MODES = frozenset(
+    {
+        ActivityMode.OFFICIAL.value,
+        ActivityMode.UNOFFICIAL.value,
+        ActivityMode.RESERVATION.value,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -487,6 +494,11 @@ class RunExecutionService:
         if (
             outcome.item_state != "skipped"
             and outcome.result_code != DYNAMIC_UNAVAILABLE_SKIP_CODE
+            # ``unknown`` means that runtime evidence is insufficient (for
+            # example, the like control has not hydrated yet), not that the
+            # page is a fourth activity type.  Preserve that safety result
+            # instead of rewriting it as a source-policy mismatch.
+            and outcome.mode in _POLICY_CHECKABLE_ACTIVITY_MODES
             and outcome.mode not in {mode.value for mode in policy.allowed_modes}
         ):
             # _inspect_item normally creates this result itself.  This guard
