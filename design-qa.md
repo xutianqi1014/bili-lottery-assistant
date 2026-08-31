@@ -1,6 +1,6 @@
 **Design QA**
 
-- release baseline: `v1.5.0` (current `main` after release merge)
+- release baseline: `v1.5.1` (current `main` after release merge)
 - QA document status: current-release baseline; historical comparison notes below are retained for traceability.
 
 - source visual truth paths:

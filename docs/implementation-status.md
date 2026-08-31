@@ -1,10 +1,17 @@
 # 实现状态
 
-当前版本：`1.5.0`
+当前版本：`1.5.1`
 
-更新时间：2026-08-24
+更新时间：2026-09-01
 
 > 本文下方保留按时间记录的历史实现条目；其中出现的 `0.1.0` 或 `0.1.1` 是对应条目当时的真实版本，不代表当前软件版本。
+
+## 2026-09-01 v1.5.1 发布改进
+
+- 修复显式重新开始时未清理非官方预写失败 checkpoint，导致 `COMMENT_EDITOR_NOT_UNIQUE` 后错误触发 `UNOFFICIAL_PARTICIPATION_WRITE_TERMINAL_NO_RETRY`。
+- 仅允许没有 confirmed、in-progress 或 unknown 副作用的 `blocked_failed` 记录在显式重启时重新执行；未知写入结果和已确认副作用仍保持人工复核保护。
+- 当前 `main`、源码、前端、安装器、文档和 Windows 目录包统一为 `1.5.1`。
+- Windows 目录版 EXE SHA-256：`7B8785299DEEC12CC3339E36A6D3BAB12118821A5CF5C8ED80C63D7957140D27`；合并 ZIP SHA-256：`37E49AF6D74E4B79F4C9FC9F32E5C175C5566C7F38984DE4427162BB3F49D7E7`。
 
 ## 已完成
 
