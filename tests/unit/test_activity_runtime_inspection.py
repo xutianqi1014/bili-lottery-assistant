@@ -503,6 +503,56 @@ async def test_reader_waits_after_navigation_before_first_body_read(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_reader_rechecks_body_after_dynamic_like_control_hydrates():
+    class HydratingPage(_Page):
+        def __init__(self) -> None:
+            super().__init__(body="动态壳页面")
+            self.hydration_waits = 0
+
+        async def content(self) -> str:
+            return "<main>动态壳页面</main>"
+
+        def locator(self, selector: str) -> _Locator:
+            like_controls = {
+                ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > "
+                ".side-toolbar__action.like",
+                ".content .sidebar-wrap .side-toolbar__action.like",
+                ".side-toolbar__action.like",
+                ".bili-dyn-action.like",
+            }
+            if selector == "body":
+                body = (
+                    "动态壳页面"
+                    if self.hydration_waits < 2
+                    else "互动抽奖 评论 转发"
+                )
+                return _Locator(1, body)
+            if selector in like_controls:
+                return _Locator(1 if self.hydration_waits >= 2 else 0)
+            return super().locator(selector)
+
+        async def wait_for_timeout(self, timeout: int) -> None:
+            del timeout
+            self.hydration_waits += 1
+
+    class HydratingBrowser(_Browser):
+        async def open(self, url: str) -> HydratingPage:
+            del url
+            self.page = HydratingPage()
+            return self.page
+
+    result = await RuntimeActivityReader().read(
+        HydratingBrowser(),
+        "400000001",
+        "https://www.bilibili.com/opus/400000001",
+    )
+
+    assert result.activity_like_state == "unliked"
+    assert result.activity_like_reason_code == "ACTIVITY_LIKE_UNLIKED_UNIQUE_CONTROL"
+    assert result.snapshot.body_text == "互动抽奖 评论 转发"
+
+
+@pytest.mark.asyncio
 async def test_reader_accepts_bilibili_t_subdomain_redirect():
     page = _Page()
     page.url = "https://t.bilibili.com/400000001"

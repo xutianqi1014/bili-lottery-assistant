@@ -110,6 +110,8 @@ _PANEL_TEXT_WAIT_INTERVAL_MS = 500
 _PANEL_TEXT_READ_TIMEOUT_MS = 1_000
 _RESERVATION_WAIT_ATTEMPTS = 8
 _RESERVATION_WAIT_INTERVAL_MS = 300
+_ACTIVITY_LIKE_READY_ATTEMPTS = 12
+_ACTIVITY_LIKE_READY_INTERVAL_MS = 250
 
 
 @dataclass(frozen=True)
@@ -172,6 +174,30 @@ class RuntimeActivityReader:
             # Do not continue into lottery/reservation/non-official DOM
             # inspection.  The error page has no participation surface and
             # must be represented as a safe, terminal skip by the run layer.
+            return RuntimeActivityRead(
+                snapshot=ActivitySnapshot(
+                    dynamic_id=dynamic_id,
+                    canonical_url=canonical_url,
+                    body_text=clean_body,
+                    expired_text=True,
+                    actionable_text=clean_body,
+                ),
+                body_excerpt=clean_body[:2000],
+                page_title=clean_title,
+                dynamic_unavailable=True,
+            )
+
+        # ``BrowserManager.open`` waits for DOMContentLoaded, but Bilibili
+        # hydrates the dynamic body and toolbar asynchronously afterwards.
+        # A transient shell has no like control and must not be mistaken for
+        # a stable unknown state.  Wait for a bounded amount of time, then
+        # re-read the body/title because the first snapshot may be stale.
+        await self._wait_for_activity_like_state(page)
+        body_text, html = await self._read_body(page)
+        title = await self._read_title(page)
+        clean_body = _clean_text(body_text)
+        clean_title = _clean_text(title)
+        if _is_unavailable_dynamic_page(clean_title, clean_body):
             return RuntimeActivityRead(
                 snapshot=ActivitySnapshot(
                     dynamic_id=dynamic_id,
@@ -340,6 +366,17 @@ class RuntimeActivityReader:
             activity_like_reason_code=like_read.reason_code,
             activity_like_selector=like_read.selector,
         )
+
+    @classmethod
+    async def _wait_for_activity_like_state(cls, page: object) -> None:
+        """Wait briefly for Bilibili's asynchronously hydrated like control."""
+
+        for attempt in range(_ACTIVITY_LIKE_READY_ATTEMPTS):
+            like_read = await cls._read_activity_like_state(page)
+            if like_read.state != "unknown":
+                return
+            if attempt + 1 < _ACTIVITY_LIKE_READY_ATTEMPTS:
+                await cls._wait_for_timeout(page, _ACTIVITY_LIKE_READY_INTERVAL_MS)
 
     @classmethod
     async def _read_activity_like_state(cls, page: object) -> _LikeStateRead:

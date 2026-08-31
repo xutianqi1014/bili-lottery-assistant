@@ -1,6 +1,6 @@
 # 实现状态
 
-当前版本：`0.1.4`
+当前版本：`1.5.0`
 
 更新时间：2026-08-24
 
@@ -522,3 +522,11 @@ DOM 写入层同步识别“去观看”，并在控件与其他按钮同时出�
 - 开发分支统一为 `v0.1.4`，Release 使用 `v0.1.4` 标签和 `BiliLotteryAssistant-windows-x64-v0.1.4` 资产名。
 - 发布前完成后端 `214 passed, 2 skipped`、前端 `22 passed`、Ruff、Mypy、TypeScript 和 Vite 构建验证。
 - Windows 目录版 EXE SHA-256 为 `F360B61499F1433266479890385942B344BF426DC3C3E4ED1A7B062DB528E0F6`；合并 ZIP SHA-256 为 `0755E7259801F312EC1BA01CD719BDE9249ECD22FEB0C18E2248D3BBC9867708`，共 14 个 8 MiB 分卷。
+
+## 2026-08-31 v1.5.0 发布改进
+
+- 修复 B 站动态首屏只返回导航壳、点赞控件稍后才异步出现时的竞态：运行时会短暂有界等待并重新读取正文、标题和点赞状态。
+- 当点赞状态仍为 `unknown` 时，保留人工复核结果 `ACTIVITY_LIKE_STATE_UNKNOWN`，不再被来源类型白名单守卫误写成 `SOURCE_ACTIVITY_TYPE_NOT_ALLOWED`。
+- 新增异步 hydration 和未知点赞状态回归测试；后端测试为 `216 passed, 2 skipped`，Ruff 检查通过。
+- 当前版本元数据、README、使用说明、设计验收、贡献者信息、前端包元数据和 Inno Setup 配置统一为 `1.5.0`；开发分支统一为 `v1.5.0`。
+- Windows 目录版 EXE SHA-256 为 `07D166D27BF1546BB4FD0C01898464158522F6218BF5FCABA865F8641F38F8E3`；合并 ZIP SHA-256 为 `46AD6494E18B615C8D0477E63378D37EC6E8BDF7077E50A2EDE0F272F260FE93`，共 18 个 8 MiB 分卷。
