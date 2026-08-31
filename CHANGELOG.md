@@ -7,6 +7,7 @@
 - 动态打开后的点赞控件使用有界等待与重新读取，避免首个导航壳页面被稳定判定为 `unknown`。
 - 点赞状态仍无法确认时继续安全暂停，并保留 `ACTIVITY_LIKE_STATE_UNKNOWN`；不会把安全复核结果改写为来源类型不允许。
 - 增加异步点赞控件出现和未知点赞状态的回归测试。
+- 修复显式重新开始时未清理非官方预写失败 checkpoint，导致 `COMMENT_EDITOR_NOT_UNIQUE` 后错误触发 `UNOFFICIAL_PARTICIPATION_WRITE_TERMINAL_NO_RETRY`；未知写入结果或已有确认副作用仍不会自动重试。
 - 统一源码、前端、安装器、README、使用说明和发布元数据版本为 `1.5.0`，开发分支为 `v1.5.0`。
 
 ### 验证

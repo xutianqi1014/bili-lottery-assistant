@@ -213,6 +213,7 @@ class RunExecutionService:
             if len(unresolved) > 1:
                 raise ValueError("RUN_RESTART_MULTIPLE_PENDING_ITEMS")
 
+            stats = _load_json_object(run.stats_json)
             if unresolved:
                 item = unresolved[0]
                 # Keep the discovery-time section hint available after a
@@ -229,11 +230,17 @@ class RunExecutionService:
                 item.result_code = None
                 item.result_message = None
                 session.add(item)
+                # A deterministic pre-write failure (for example, a
+                # transiently duplicated comment editor) is safe to retry
+                # after the user explicitly chooses Restart.  Unknown writes,
+                # in-progress writes, and records with confirmed side effects
+                # remain durable so Restart cannot duplicate an external
+                # action.
+                _clear_restartable_unofficial_write(stats, item.activity_id)
 
             # The explicit restart clears the item-level manual-review gate;
             # queue() will still fail closed if a different blocked item is
             # present or if the run state changed concurrently.
-            stats = _load_json_object(run.stats_json)
             refreshed_items = list(
                 session.exec(select(RunItem).where(RunItem.run_id == run_id)).all()
             )
@@ -1466,6 +1473,49 @@ def _load_json_object(value: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _clear_restartable_unofficial_write(stats: dict[str, Any], activity_id: int) -> None:
+    """Drop only a known pre-write failure before an explicit item restart.
+
+    ``blocked_failed`` is used for deterministic DOM/preflight failures, but
+    the durable write ledger must still be treated as authoritative whenever
+    an action was confirmed or its outcome was unknown.  The checkpoint shape
+    lets us distinguish the safe-to-retry case without weakening the global
+    no-automatic-retry guarantee.
+    """
+
+    writes = stats.get("unofficialParticipationWrites")
+    if not isinstance(writes, dict):
+        return
+    key = str(activity_id)
+    record = writes.get(key)
+    if not isinstance(record, dict):
+        return
+    if record.get("state") != "blocked_failed" or record.get("resultState") != "failed":
+        return
+
+    checkpoint = record.get("checkpoint")
+    if not isinstance(checkpoint, dict):
+        return
+    checkpoints = checkpoint.get("checkpoints")
+    if not isinstance(checkpoints, list) or not checkpoints:
+        return
+    if any(
+        not isinstance(action, dict)
+        or action.get("state") in {"confirmed", "in_progress", "unknown"}
+        for action in checkpoints
+    ):
+        return
+
+    previous_result = record.get("resultCode")
+    writes.pop(key, None)
+    if writes:
+        stats["unofficialParticipationWrites"] = writes
+    else:
+        stats.pop("unofficialParticipationWrites", None)
+    if stats.get("unofficialParticipationLastResult") == previous_result:
+        stats.pop("unofficialParticipationLastResult", None)
 
 
 def _load_json_ints(value: str) -> list[int]:

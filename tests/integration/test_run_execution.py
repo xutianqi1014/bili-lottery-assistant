@@ -362,6 +362,23 @@ def test_prepare_restart_resets_only_the_current_manual_review_item() -> None:
                 "blockedActivities": 1,
                 "skippedActivities": 1,
                 "requiresManualReview": True,
+                "unofficialParticipationLastResult": "COMMENT_EDITOR_NOT_UNIQUE",
+                "unofficialParticipationWrites": {
+                    str(current.activity_id): {
+                        "state": "blocked_failed",
+                        "resultState": "failed",
+                        "resultCode": "COMMENT_EDITOR_NOT_UNIQUE",
+                        "checkpoint": {
+                            "status": "blocked_failed",
+                            "checkpoints": [
+                                {"action": "comment", "state": "failed"},
+                                {"action": "repost", "state": "pending"},
+                                {"action": "like", "state": "pending"},
+                                {"action": "follow", "state": "pending"},
+                            ],
+                        },
+                    }
+                },
             }
         )
         session.add_all([run, current, completed])
@@ -385,9 +402,58 @@ def test_prepare_restart_resets_only_the_current_manual_review_item() -> None:
         stats = json.loads(run.stats_json)
         assert stats["requiresManualReview"] is False
         assert stats["restartCount"] == 1
+        assert str(current.activity_id) not in stats.get("unofficialParticipationWrites", {})
+        assert "unofficialParticipationLastResult" not in stats
 
     queued = runner.queue(run_id, resume=True)
     assert queued.state == "queued"
+
+
+def test_prepare_restart_keeps_unofficial_write_with_confirmed_side_effect() -> None:
+    engine = create_engine("sqlite://")
+    init_database(engine)
+    run_id = _seed_run(engine, state="waiting_user", family="normal")
+    with Session(engine) as session:
+        run = session.get(Run, run_id)
+        item = session.get(RunItem, (run_id, 1))
+        assert run is not None and item is not None
+        item.state = "waiting_user"
+        run.stats_json = json.dumps(
+            {
+                "requiresManualReview": True,
+                "unofficialParticipationLastResult": "LIKE_CONTROL_NOT_UNIQUE",
+                "unofficialParticipationWrites": {
+                    str(item.activity_id): {
+                        "state": "blocked_failed",
+                        "resultState": "failed",
+                        "resultCode": "LIKE_CONTROL_NOT_UNIQUE",
+                        "checkpoint": {
+                            "status": "blocked_failed",
+                            "checkpoints": [
+                                {"action": "comment", "state": "confirmed"},
+                                {"action": "repost", "state": "confirmed"},
+                                {"action": "like", "state": "failed"},
+                                {"action": "follow", "state": "pending"},
+                            ],
+                        },
+                    }
+                },
+            }
+        )
+        session.add_all([run, item])
+        session.commit()
+
+    runner = RunExecutionService(engine, _Browser(""), EventHub())
+    runner.prepare_restart(run_id)
+
+    with Session(engine) as session:
+        run = session.get(Run, run_id)
+        item = session.get(RunItem, (run_id, 1))
+        assert run is not None and item is not None
+        stats = json.loads(run.stats_json)
+        assert item.state == "planned"
+        assert str(item.activity_id) in stats["unofficialParticipationWrites"]
+        assert stats["unofficialParticipationLastResult"] == "LIKE_CONTROL_NOT_UNIQUE"
 
 
 @pytest.mark.asyncio
