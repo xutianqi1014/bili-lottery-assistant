@@ -30,7 +30,7 @@ from .actions import (
 from .page_evidence import AUTHOR_NAME_SELECTORS
 
 UNOFFICIAL_WRITE_SELECTOR_VERSION = (
-    "unofficial_write_dom_v9-comment-repost-hydration-scoped-like-author-header"
+    "unofficial_write_dom_v10-scoped-security-prewrite-comment-repost-hydration"
 )
 
 LIKE_SELECTOR = ".side-toolbar__action.like"
@@ -91,11 +91,26 @@ _SUCCESS_MARKERS = (
     "动态发布成功",
     "已转发",
 )
-# Keep this list limited to explicit verification/challenge signals.  A dynamic
-# can legitimately mention “登录” (for example, a shop being logged in on
-# several platforms); treating that ordinary content as a security challenge
-# would block the first comment before any write occurs.
-_SECURITY_MARKERS = ("验证码", "安全验证", "风险验证")
+# Do not scan the complete dynamic body for these words.  Giveaway copy can
+# legitimately use “验证码” as ordinary marketing language (for example,
+# “这也许是最简单的验证码”), which is not a page-level security challenge.
+# Prefer visible challenge containers/iframes and use the text fallback only
+# for imperative or terminal verification messages.
+_SECURITY_CHALLENGE_SELECTORS = (
+    'iframe[src*="captcha"]',
+    'iframe[src*="geetest"]',
+    '[class*="geetest"]',
+    '[class*="captcha"]',
+    '[class*="security-verify"]',
+    '[class*="risk-verify"]',
+    '[data-testid*="captcha"]',
+)
+_SECURITY_TEXT_RE = re.compile(
+    r"(?:请|需要|必须|点击|拖动|滑动)[^\r\n。！？]{0,12}"
+    r"(?:验证码|人机验证|安全验证|风险验证)"
+    r"|(?:验证码|人机验证|安全验证|风险验证)"
+    r"[^\r\n。！？]{0,12}(?:后继续|后重试|失败|错误|过期|拦截)"
+)
 _FOLLOW_DONE_MARKERS = ("已关注", "互相关注")
 _FOLLOW_READY_MARKER = "关注"
 _AUTHOR_SEARCH_DELAY_MIN_SEC = 1.0
@@ -153,8 +168,9 @@ class DomUnofficialTransport:
                 "exactly one visible outer dynamic like control is required",
             )
         if await _security_page(page):
-            return _unknown(
-                "DYNAMIC_LIKE_SECURITY_CHALLENGE", "verification or security challenge is visible"
+            return _failed(
+                "DYNAMIC_LIKE_SECURITY_CHALLENGE",
+                "verification or security challenge is visible before the like click",
             )
         try:
             await _click(controls[0])
@@ -178,8 +194,9 @@ class DomUnofficialTransport:
                 "COMMENT_EDITOR_NOT_UNIQUE", "exactly one visible comment editor is required"
             )
         if await _security_page(page):
-            return _unknown(
-                "COMMENT_SECURITY_CHALLENGE", "verification or security challenge is visible"
+            return _failed(
+                "COMMENT_SECURITY_CHALLENGE",
+                "verification or security challenge is visible before the comment fill",
             )
         try:
             await _fill(editors[0], text)
@@ -242,8 +259,9 @@ class DomUnofficialTransport:
                 "REPOST_CONTROL_NOT_UNIQUE", "exactly one visible forward control is required"
             )
         if await _security_page(page):
-            return _unknown(
-                "REPOST_SECURITY_CHALLENGE", "verification or security challenge is visible"
+            return _failed(
+                "REPOST_SECURITY_CHALLENGE",
+                "verification or security challenge is visible before the forward click",
             )
         try:
             await _click(controls[0])
@@ -651,8 +669,11 @@ async def _page_text(page: Any) -> str:
 
 
 async def _security_page(page: Any) -> bool:
+    for selector in _SECURITY_CHALLENGE_SELECTORS:
+        if await _visible_count(page, selector) > 0:
+            return True
     text = await _page_text(page)
-    return any(marker in text for marker in _SECURITY_MARKERS)
+    return bool(_SECURITY_TEXT_RE.search(text))
 
 
 async def _has_any_success_marker(page: Any) -> bool:

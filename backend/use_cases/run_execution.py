@@ -56,6 +56,11 @@ from backend.use_cases.unofficial_participation_execution import (
 )
 
 DYNAMIC_UNAVAILABLE_SKIP_CODE = "DYNAMIC_UNAVAILABLE_SKIPPED"
+_LEGACY_PREWRITE_SECURITY_ACTIONS = {
+    "COMMENT_SECURITY_CHALLENGE": "comment",
+    "DYNAMIC_LIKE_SECURITY_CHALLENGE": "like",
+    "REPOST_SECURITY_CHALLENGE": "repost",
+}
 _POLICY_CHECKABLE_ACTIVITY_MODES = frozenset(
     {
         ActivityMode.OFFICIAL.value,
@@ -1482,7 +1487,9 @@ def _clear_restartable_unofficial_write(stats: dict[str, Any], activity_id: int)
     the durable write ledger must still be treated as authoritative whenever
     an action was confirmed or its outcome was unknown.  The checkpoint shape
     lets us distinguish the safe-to-retry case without weakening the global
-    no-automatic-retry guarantee.
+    no-automatic-retry guarantee.  A v1.5.1 security false positive was stored
+    as ``blocked_unknown`` before any DOM write; the narrowly identified legacy
+    shape is also safe to clear during an explicit restart.
     """
 
     writes = stats.get("unofficialParticipationWrites")
@@ -1492,20 +1499,46 @@ def _clear_restartable_unofficial_write(stats: dict[str, Any], activity_id: int)
     record = writes.get(key)
     if not isinstance(record, dict):
         return
-    if record.get("state") != "blocked_failed" or record.get("resultState") != "failed":
-        return
-
     checkpoint = record.get("checkpoint")
     if not isinstance(checkpoint, dict):
         return
     checkpoints = checkpoint.get("checkpoints")
     if not isinstance(checkpoints, list) or not checkpoints:
         return
-    if any(
-        not isinstance(action, dict)
-        or action.get("state") in {"confirmed", "in_progress", "unknown"}
-        for action in checkpoints
-    ):
+
+    record_state = record.get("state")
+    result_state = record.get("resultState")
+    if record_state == "blocked_failed" and result_state == "failed":
+        if any(
+            not isinstance(action, dict)
+            or action.get("state") in {"confirmed", "in_progress", "unknown"}
+            for action in checkpoints
+        ):
+            return
+    elif record_state == "blocked_unknown" and result_state == "unknown":
+        expected_action = _LEGACY_PREWRITE_SECURITY_ACTIONS.get(
+            str(record.get("resultCode"))
+        )
+        if expected_action is None or checkpoint.get("status") != "blocked_unknown":
+            return
+        unknown_indexes = [
+            index
+            for index, action in enumerate(checkpoints)
+            if isinstance(action, dict) and action.get("state") == "unknown"
+        ]
+        if len(unknown_indexes) != 1:
+            return
+        unknown_index = unknown_indexes[0]
+        unknown_action = checkpoints[unknown_index]
+        if not isinstance(unknown_action, dict) or unknown_action.get("action") != expected_action:
+            return
+        if any(
+            not isinstance(action, dict) or action.get("state") != "pending"
+            for index, action in enumerate(checkpoints)
+            if index != unknown_index
+        ):
+            return
+    else:
         return
 
     previous_result = record.get("resultCode")

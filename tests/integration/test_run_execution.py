@@ -456,6 +456,53 @@ def test_prepare_restart_keeps_unofficial_write_with_confirmed_side_effect() -> 
         assert stats["unofficialParticipationLastResult"] == "LIKE_CONTROL_NOT_UNIQUE"
 
 
+def test_prepare_restart_clears_legacy_prewrite_security_unknown() -> None:
+    engine = create_engine("sqlite://")
+    init_database(engine)
+    run_id = _seed_run(engine, state="waiting_user", family="normal")
+    with Session(engine) as session:
+        run = session.get(Run, run_id)
+        item = session.get(RunItem, (run_id, 1))
+        assert run is not None and item is not None
+        item.state = "waiting_user"
+        run.stats_json = json.dumps(
+            {
+                "requiresManualReview": True,
+                "unofficialParticipationLastResult": "COMMENT_SECURITY_CHALLENGE",
+                "unofficialParticipationWrites": {
+                    str(item.activity_id): {
+                        "state": "blocked_unknown",
+                        "resultState": "unknown",
+                        "resultCode": "COMMENT_SECURITY_CHALLENGE",
+                        "checkpoint": {
+                            "status": "blocked_unknown",
+                            "checkpoints": [
+                                {"action": "comment", "state": "unknown"},
+                                {"action": "repost", "state": "pending"},
+                                {"action": "like", "state": "pending"},
+                                {"action": "follow", "state": "pending"},
+                            ],
+                        },
+                    }
+                },
+            }
+        )
+        session.add_all([run, item])
+        session.commit()
+
+    runner = RunExecutionService(engine, _Browser(""), EventHub())
+    runner.prepare_restart(run_id)
+
+    with Session(engine) as session:
+        run = session.get(Run, run_id)
+        item = session.get(RunItem, (run_id, 1))
+        assert run is not None and item is not None
+        stats = json.loads(run.stats_json)
+        assert item.state == "planned"
+        assert str(item.activity_id) not in stats.get("unofficialParticipationWrites", {})
+        assert "unofficialParticipationLastResult" not in stats
+
+
 @pytest.mark.asyncio
 async def test_execution_uses_liked_marker_without_opening_panel():
     engine = create_engine("sqlite://")

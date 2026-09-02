@@ -437,7 +437,11 @@ class UnofficialParticipationExecutionService:
                 "write": record,
             }
         if state in {"running", "blocked_unknown", "blocked_failed"}:
-            raise ValueError("UNOFFICIAL_PARTICIPATION_WRITE_TERMINAL_NO_RETRY")
+            previous_code = str(record.get("resultCode") or "UNKNOWN")
+            raise ValueError(
+                "UNOFFICIAL_PARTICIPATION_WRITE_TERMINAL_NO_RETRY"
+                f":previous={previous_code};state={state}"
+            )
         raise ValueError("UNOFFICIAL_PARTICIPATION_WRITE_STATE_INVALID")
 
     def _record_payload(

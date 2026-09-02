@@ -158,6 +158,13 @@ class _ScopedDuplicateLikePage(_Page):
         return super().locator(selector)
 
 
+class _VisibleSecurityChallengePage(_Page):
+    def locator(self, selector):
+        if selector == '[class*="geetest"]':
+            return _LocatorSet([_Locator(text="请完成验证")])
+        return super().locator(selector)
+
+
 class _TransientDuplicateRepostPage(_Page):
     def __init__(self):
         super().__init__()
@@ -376,7 +383,25 @@ async def test_comment_does_not_treat_ordinary_logged_word_in_dynamic_body_as_se
 
 
 @pytest.mark.asyncio
-async def test_comment_still_blocks_explicit_verification_marker():
+async def test_comment_allows_ordinary_captcha_word_in_giveaway_copy():
+    page = _Page()
+    page.body = "验证通过，旅程即将开始 ✅这也许是最简单的验证码"
+    browser = _Browser({"https://www.bilibili.com/opus/123": page})
+    transport = DomUnofficialTransport(browser, poll_attempts=2, poll_interval_ms=0)
+
+    result = await transport.perform(
+        UnofficialAction.COMMENT,
+        target_url="https://www.bilibili.com/opus/123",
+        payload={"commentText": "参与抽奖"},
+    )
+
+    assert result.state is WriteOutcomeState.SUCCESS
+    assert result.code == "COMMENT_SUBMIT_ACCEPTED"
+    assert page.editor.filled == ["参与抽奖"]
+
+
+@pytest.mark.asyncio
+async def test_comment_blocks_explicit_verification_marker_before_write():
     page = _Page()
     page.body = "请完成验证码后继续"
     browser = _Browser({"https://www.bilibili.com/opus/123": page})
@@ -388,7 +413,25 @@ async def test_comment_still_blocks_explicit_verification_marker():
         payload={"commentText": "参与抽奖"},
     )
 
-    assert result.state is WriteOutcomeState.UNKNOWN
+    assert result.state is WriteOutcomeState.FAILED
+    assert result.code == "COMMENT_SECURITY_CHALLENGE"
+    assert page.editor.filled == []
+
+
+@pytest.mark.asyncio
+async def test_comment_blocks_visible_security_challenge_control_before_write():
+    page = _VisibleSecurityChallengePage()
+    page.body = "普通动态正文"
+    browser = _Browser({"https://www.bilibili.com/opus/123": page})
+    transport = DomUnofficialTransport(browser, poll_attempts=2, poll_interval_ms=0)
+
+    result = await transport.perform(
+        UnofficialAction.COMMENT,
+        target_url="https://www.bilibili.com/opus/123",
+        payload={"commentText": "参与抽奖"},
+    )
+
+    assert result.state is WriteOutcomeState.FAILED
     assert result.code == "COMMENT_SECURITY_CHALLENGE"
     assert page.editor.filled == []
 
