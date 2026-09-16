@@ -14,6 +14,9 @@ class ReadlistCandidate:
     item_count: int | None
     updated_text: str | None
     observed_updated_at: int | None
+    source_mid: str | None = None
+    source_upload_url: str | None = None
+    readlist_strategy: str | None = None
 
 
 @dataclass(frozen=True)

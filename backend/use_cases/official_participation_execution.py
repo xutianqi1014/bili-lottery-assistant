@@ -12,6 +12,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy.engine import Engine
 from sqlmodel import select
 
@@ -41,6 +42,8 @@ _PRE_CLICK_RECONCILABLE_CODES = {
     "OFFICIAL_LOTTERY_PAGE_READ_UNKNOWN",
     "OFFICIAL_PARTICIPATION_BUTTON_NOT_FOUND",
 }
+
+_OFFICIAL_SCOPE_MODES = ("official", "reservation")
 
 
 class OfficialParticipationExecutionService:
@@ -233,7 +236,13 @@ class OfficialParticipationExecutionService:
             items = list(
                 session.exec(
                     select(RunItem)
-                    .where(RunItem.run_id == run_id, RunItem.family == "official")
+                    .where(
+                        RunItem.run_id == run_id,
+                        or_(
+                            RunItem.__table__.c.family == "official",  # type: ignore[attr-defined]
+                            RunItem.__table__.c.mode.in_(_OFFICIAL_SCOPE_MODES),  # type: ignore[attr-defined]
+                        ),
+                    )
                     .order_by(RunItem.__table__.c.sequence)  # type: ignore[attr-defined]
                 ).all()
             )
@@ -252,13 +261,18 @@ class OfficialParticipationExecutionService:
         with open_session(self.engine) as session:
             return list(
                 session.exec(
-                    select(RunItem.dynamic_id).where(
+                    select(RunItem.dynamic_id)
+                    .where(
                         RunItem.run_id == run_id,
-                        RunItem.family == "official",
+                        or_(
+                            RunItem.__table__.c.family == "official",  # type: ignore[attr-defined]
+                            RunItem.__table__.c.mode.in_(_OFFICIAL_SCOPE_MODES),  # type: ignore[attr-defined]
+                        ),
                         RunItem.__table__.c.state.in_(  # type: ignore[attr-defined]
                             ["planned", "running", "waiting_user"]
                         ),
                     )
+                    .order_by(RunItem.__table__.c.sequence)  # type: ignore[attr-defined]
                 ).all()
             )
 

@@ -17,6 +17,9 @@ _ADDITIONS: dict[str, dict[str, str]] = {
         "parse_checked_at": "DATETIME",
         "parse_error_code": "TEXT",
     },
+    "readlists": {
+        "source_mid": "TEXT",
+    },
     "activities": {
         "classification_json": "TEXT NOT NULL DEFAULT '{}'",
         "preflight_checked_at": "DATETIME",

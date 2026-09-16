@@ -38,6 +38,7 @@ def _serialize_profile(row: Any) -> dict[str, Any]:
         config = {}
     if not isinstance(config, dict):
         config = {}
+    source_pages = _source_pages(config, row)
     return {
         "id": row.id,
         "sourceKey": row.source_key,
@@ -48,6 +49,7 @@ def _serialize_profile(row: Any) -> dict[str, Any]:
         "adapterKey": row.adapter_key,
         "enabled": row.enabled,
         "latestPerFamily": row.latest_per_family,
+        "sourcePages": source_pages,
         "activityTypes": [
             value
             for value in config.get("activityTypes", [])
@@ -56,6 +58,22 @@ def _serialize_profile(row: Any) -> dict[str, Any]:
         "lastDiscoveryAt": row.last_discovery_at.isoformat() if row.last_discovery_at else None,
     }
 
+
+
+def _source_pages(config: dict[str, Any], row: Any) -> list[dict[str, str]]:
+    raw_pages = config.get("sourcePages")
+    pages: list[dict[str, str]] = []
+    if isinstance(raw_pages, list):
+        for raw_page in raw_pages:
+            if not isinstance(raw_page, dict):
+                continue
+            mid = str(raw_page.get("mid") or "").strip()
+            upload_url = str(raw_page.get("uploadUrl") or "").strip()
+            if mid and upload_url:
+                pages.append({"mid": mid, "uploadUrl": upload_url})
+    if pages:
+        return pages
+    return [{"mid": str(row.mid), "uploadUrl": str(row.upload_url)}]
 
 @router.post("/api/account/open-login", dependencies=[Depends(require_csrf)])
 async def open_login(request: Request) -> dict[str, bool]:

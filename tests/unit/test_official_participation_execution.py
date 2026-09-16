@@ -232,6 +232,36 @@ async def test_non_official_item_is_rejected_before_authorization(tmp_path) -> N
 
 
 @pytest.mark.asyncio
+async def test_runtime_official_item_from_mixed_source_is_in_authorized_scope(tmp_path) -> None:
+    del tmp_path
+    engine = create_engine("sqlite://")
+    init_database(engine)
+    run_id, activity_id = _seed_target(engine, family="normal")
+    transport = _Transport(
+        OfficialParticipationWriteResult(
+            OfficialParticipationOutcomeState.SUCCESS,
+            "OFFICIAL_PARTICIPATION_CONFIRMED",
+            "confirmed",
+        )
+    )
+    service = OfficialParticipationExecutionService(
+        _settings(enabled=True),
+        engine,
+        _Browser(),
+        transport_factory=lambda: transport,
+    )
+
+    result = await service.execute(
+        run_id,
+        activity_id=activity_id,
+        source_policy_authorized=True,
+    )
+
+    assert result["state"] == "completed"
+    assert transport.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_official_automation_does_not_require_general_direct_write_switch(tmp_path) -> None:
     del tmp_path
     engine = create_engine("sqlite://")

@@ -8,6 +8,7 @@ export type SourceProfile = {
   adapterKey: string;
   enabled: boolean;
   latestPerFamily: number;
+  sourcePages?: Array<{ mid: string; uploadUrl: string }>;
   activityTypes?: string[];
   lastDiscoveryAt: string | null;
 };

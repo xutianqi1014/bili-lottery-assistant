@@ -72,6 +72,10 @@ class DiscoveryService:
                 selected = custom_selector(list(candidates))
             else:
                 selected = select_latest_readlist_per_family(candidates)
+            if isinstance(selected, dict):
+                selected_candidates = list(selected.values())
+            else:
+                selected_candidates = list(selected)
             selected_rows = []
             stats = {
                 "candidateReadlists": len(candidates),
@@ -85,7 +89,7 @@ class DiscoveryService:
                 "activityParseProblems": 0,
             }
             seen_activity_ids: set[str] = set()
-            for family, candidate in selected.items():
+            for candidate in selected_candidates:
                 with open_session(self.engine) as session:
                     readlist = readlists.upsert_readlist(session, profile.id, candidate)
                     session.commit()

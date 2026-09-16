@@ -1,9 +1,9 @@
 import json
 
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlmodel import Session, select
 
-from backend.db.models.source import SourceProfile
+from backend.db.models.source import Readlist, SourceProfile
 
 
 def list_profiles(session: Session) -> list[SourceProfile]:
@@ -32,6 +32,20 @@ def seed_default_profile(session: Session) -> SourceProfile:
         config={
             "displayName": "你的抽奖工具人",
             "activityTypes": ["official", "unofficial"],
+            "sourcePages": [
+                {
+                    "mid": "100680137",
+                    "uploadUrl": "https://space.bilibili.com/100680137/upload/opus",
+                    "readlistStrategy": "families",
+                },
+                {
+                    "mid": "280604312",
+                    "uploadUrl": "https://space.bilibili.com/280604312/upload/opus",
+                    "readlistStrategy": "named_exact",
+                    "readlistName": "抽奖合集",
+                    "family": "normal",
+                },
+            ],
             "families": {
                 "normal": {"execution_mode": "unofficial"},
                 "official": {"execution_mode": "official"},
@@ -53,7 +67,7 @@ def seed_nuomi_backpack_profile(session: Session) -> SourceProfile:
         config={
             "displayName": "糯米是个背包",
             "readlistStrategy": "largest_year",
-            "readlistNamePattern": "^20\\d{2}$",
+            "readlistNamePattern": "^20\d{2}$",
             "activityTypes": ["official", "reservation"],
             "referenceUrls": {
                 "sourceArticle": "https://www.bilibili.com/opus/1236417468474327060/?from=readlist",
@@ -88,10 +102,28 @@ def seed_tomato_fries_profile(session: Session) -> SourceProfile:
 
 
 def seed_builtin_profiles(session: Session) -> list[SourceProfile]:
-    """Ensure all built-in UP profiles exist without changing user settings."""
+    """Ensure built-in sources exist and migrate the former standalone 280604312 source."""
+
+    legacy = session.exec(
+        select(SourceProfile).where(
+            SourceProfile.source_key == "lottery_collection_280604312"
+        )
+    ).first()
+    default_profile = seed_default_profile(session)
+    if legacy is not None and legacy.enabled:
+        legacy.enabled = False
+        session.add(legacy)
+        session.commit()
+    if legacy is not None and legacy.id is not None and default_profile.id is not None:
+        session.exec(
+            update(Readlist)
+            .where(Readlist.__table__.c.source_profile_id == legacy.id)  # type: ignore[attr-defined]
+            .values(source_profile_id=default_profile.id)
+        )
+        session.commit()
 
     return [
-        seed_default_profile(session),
+        default_profile,
         seed_nuomi_backpack_profile(session),
         seed_tomato_fries_profile(session),
     ]
@@ -117,19 +149,22 @@ def _ensure_profile(
             current_config = {}
         if not isinstance(current_config, dict):
             current_config = {}
+        changed = False
         missing = {key: value for key, value in config.items() if key not in current_config}
-        # Rename the original built-in label for existing databases, but do
-        # not overwrite a display name that the user explicitly customized.
         if (
             source_key == "lottery_toolman"
             and current_config.get("displayName") == "默认抽奖来源"
         ):
             current_config["displayName"] = config["displayName"]
-            missing = {**missing, "displayName": config["displayName"]}
+            missing["displayName"] = config["displayName"]
+        if source_key == "lottery_toolman" and existing.latest_per_family != latest_per_family:
+            existing.latest_per_family = latest_per_family
+            changed = True
         if missing:
-            existing.config_json = json.dumps(
-                {**current_config, **missing}, ensure_ascii=False
-            )
+            current_config.update(missing)
+            existing.config_json = json.dumps(current_config, ensure_ascii=False)
+            changed = True
+        if changed:
             session.add(existing)
             session.commit()
             session.refresh(existing)

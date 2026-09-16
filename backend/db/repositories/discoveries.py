@@ -44,6 +44,7 @@ def save_preview(
                 "family": row.family,
                 "suffix_value": row.suffix_value,
                 "item_count": row.item_count,
+                "source_mid": row.source_mid,
             }
             for row in selected_readlists
         ],

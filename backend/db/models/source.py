@@ -38,6 +38,7 @@ class Readlist(SQLModel, table=True):
     item_count: int | None = None
     display_updated_text: str | None = None
     observed_updated_at: datetime | None = None
+    source_mid: str | None = None
     first_seen_at: datetime = Field(default_factory=utc_now)
     last_seen_at: datetime = Field(default_factory=utc_now)
 

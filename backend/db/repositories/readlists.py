@@ -39,6 +39,7 @@ def upsert_readlist(session: Session, profile_id: int, candidate: ReadlistCandid
     readlist.suffix_value = candidate.suffix_value
     readlist.item_count = candidate.item_count
     readlist.display_updated_text = candidate.updated_text
+    readlist.source_mid = candidate.source_mid
     readlist.last_seen_at = _now()
     session.add(readlist)
     session.flush()
