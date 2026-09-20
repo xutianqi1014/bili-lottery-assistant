@@ -17,6 +17,26 @@ from enum import StrEnum
 from typing import Any
 from urllib.parse import quote, urlsplit
 
+from backend.activity_engine.shared.author_location import (
+    AuthorIdentityPolicy,
+    author_profile_ids,
+)
+from backend.activity_engine.shared.dom_read import (
+    first_text as _first_text,
+)
+from backend.activity_engine.shared.dom_read import (
+    inner_text as _inner_text,
+)
+from backend.activity_engine.shared.dom_read import (
+    normalize as _normalize,
+)
+from backend.activity_engine.shared.dom_read import (
+    page_text as _page_text,
+)
+from backend.activity_engine.shared.dom_read import (
+    poll_read,
+    wait_for_unique_candidates,
+)
 from backend.activity_engine.unofficial.page_evidence import AUTHOR_NAME_SELECTORS
 
 PROFILE_FOLLOW_SELECTOR = ".space-follow-btn"
@@ -228,16 +248,6 @@ async def _read_follow_state(
     )
 
 
-async def _page_text(page: Any) -> str:
-    locator_factory = getattr(page, "locator", None)
-    if not callable(locator_factory):
-        return ""
-    try:
-        return _normalize(await _inner_text(locator_factory("body")))
-    except Exception:
-        return ""
-
-
 async def _resolve_profile_id_from_search(
     browser: Any,
     author: str,
@@ -251,27 +261,19 @@ async def _resolve_profile_id_from_search(
         _AUTHOR_SEARCH_DELAY_MIN_SEC,
         _AUTHOR_SEARCH_DELAY_MAX_SEC,
     )
-    matches: set[str] = set()
-    for candidate in await _visible_candidates(search_page, AUTHOR_PROFILE_SELECTOR):
-        href = await _attribute(candidate, "href")
-        name = _normalize(await _inner_text(candidate))
-        if not href or not _author_name_matches(name, author):
-            continue
-        candidate_id = _profile_id_from_href(href)
-        if candidate_id:
-            matches.add(candidate_id)
+    matches = await _author_profile_ids(search_page, author)
     return next(iter(matches)) if len(matches) == 1 else None
 
 
 async def _wait_for_author_name(page: Any, *, poll_attempts: int, poll_interval_ms: int) -> str:
-    latest = ""
-    for attempt in range(max(1, poll_attempts)):
-        latest = await _first_text(page, AUTHOR_NAME_SELECTORS)
-        if latest:
-            return latest
-        if attempt + 1 < poll_attempts:
-            await _wait_for_timeout(page, poll_interval_ms)
-    return latest
+    return await poll_read(
+        page,
+        lambda: _first_text(page, AUTHOR_NAME_SELECTORS),
+        bool,
+        poll_attempts=poll_attempts,
+        poll_interval_ms=poll_interval_ms,
+        wait=_wait_for_timeout,
+    )
 
 
 async def _wait_for_author_profile_ids(
@@ -281,14 +283,14 @@ async def _wait_for_author_profile_ids(
     poll_attempts: int,
     poll_interval_ms: int,
 ) -> set[str]:
-    latest: set[str] = set()
-    for attempt in range(max(1, poll_attempts)):
-        latest = await _author_profile_ids(page, author)
-        if latest:
-            return latest
-        if attempt + 1 < poll_attempts:
-            await _wait_for_timeout(page, poll_interval_ms)
-    return latest
+    return await poll_read(
+        page,
+        lambda: _author_profile_ids(page, author),
+        bool,
+        poll_attempts=poll_attempts,
+        poll_interval_ms=poll_interval_ms,
+        wait=_wait_for_timeout,
+    )
 
 
 async def _wait_for_unique_candidates(
@@ -298,64 +300,22 @@ async def _wait_for_unique_candidates(
     poll_attempts: int,
     poll_interval_ms: int,
 ) -> list[Any]:
-    latest: list[Any] = []
-    for attempt in range(max(1, poll_attempts)):
-        latest = await _visible_candidates(page, selector)
-        if len(latest) == 1:
-            return latest
-        if attempt + 1 < poll_attempts:
-            await _wait_for_timeout(page, poll_interval_ms)
-    return latest
-
-
-async def _visible_candidates(page: Any, selector: str) -> list[Any]:
-    locator_factory = getattr(page, "locator", None)
-    if not callable(locator_factory):
-        return []
-    locator = locator_factory(selector)
-    count_fn = getattr(locator, "count", None)
-    if not callable(count_fn):
-        return []
-    try:
-        count = int(await count_fn())
-    except Exception:
-        return []
-    result: list[Any] = []
-    for index in range(count):
-        candidate = locator.nth(index)
-        try:
-            visible = (
-                await candidate.is_visible()
-                if callable(getattr(candidate, "is_visible", None))
-                else True
-            )
-        except Exception:
-            visible = False
-        if visible:
-            result.append(candidate)
-    return result
-
-
-async def _first_text(page: Any, selectors: tuple[str, ...]) -> str:
-    for selector in selectors:
-        values = await _visible_candidates(page, selector)
-        if values:
-            value = _normalize(await _inner_text(values[0]))
-            if value:
-                return value
-    return ""
+    return await wait_for_unique_candidates(
+        page,
+        selector,
+        poll_attempts=poll_attempts,
+        poll_interval_ms=poll_interval_ms,
+        wait=_wait_for_timeout,
+    )
 
 
 async def _author_profile_ids(page: Any, author: str) -> set[str]:
-    result: set[str] = set()
-    for candidate in await _visible_candidates(page, AUTHOR_PROFILE_SELECTOR):
-        href = await _attribute(candidate, "href")
-        if not href or not _author_name_matches(_normalize(await _inner_text(candidate)), author):
-            continue
-        profile_id = _profile_id_from_href(href)
-        if profile_id:
-            result.add(profile_id)
-    return result
+    return await author_profile_ids(
+        page,
+        author,
+        selector=AUTHOR_PROFILE_SELECTOR,
+        policy=AuthorIdentityPolicy(_author_name_matches, _profile_id_from_href),
+    )
 
 
 def _author_name_matches(display_name: str, author: str) -> bool:
@@ -375,28 +335,6 @@ def _profile_id_from_href(href: str) -> str:
     return ""
 
 
-async def _attribute(locator: Any, name: str) -> str:
-    method = getattr(locator, "get_attribute", None)
-    if not callable(method):
-        return ""
-    try:
-        return str(await method(name) or "")
-    except Exception:
-        return ""
-
-
-async def _inner_text(locator: Any) -> str:
-    method = getattr(locator, "inner_text", None)
-    if not callable(method):
-        return ""
-    try:
-        return str(await method(timeout=2_000))
-    except TypeError:
-        return str(await method())
-    except Exception:
-        return ""
-
-
 async def _wait_for_timeout(page: Any, timeout_ms: int) -> None:
     wait = getattr(page, "wait_for_timeout", None)
     if callable(wait):
@@ -411,10 +349,6 @@ async def _wait_for_timeout(page: Any, timeout_ms: int) -> None:
 async def _wait_random_delay(page: Any, minimum_sec: float, maximum_sec: float) -> None:
     delay_sec = random.uniform(max(0.0, minimum_sec), max(minimum_sec, maximum_sec))
     await _wait_for_timeout(page, int(round(delay_sec * 1000)))
-
-
-def _normalize(value: str) -> str:
-    return " ".join(value.replace("\u200b", "").replace("\ufeff", "").split())
 
 
 def _unknown(code: str, message: str, *, profile_url: str | None = None) -> AuthorFollowInspection:

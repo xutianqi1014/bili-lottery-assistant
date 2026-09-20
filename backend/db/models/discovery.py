@@ -25,11 +25,10 @@ class DiscoverySelection(SQLModel, table=True):
 
     discovery_run_id: int = Field(foreign_key="discovery_runs.id", primary_key=True)
     source_article_id: int = Field(foreign_key="source_articles.id", primary_key=True)
-    readlist_id: int = Field(foreign_key="readlists.id")
+    readlist_id: int = Field(foreign_key="readlists.id", primary_key=True)
     family: str
     selected_rank: int
     source_position: int
     like_state_snapshot: str
     decision: str
     decision_reason: str
-

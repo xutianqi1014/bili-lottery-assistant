@@ -62,25 +62,7 @@ def get_run(run_id: int, request: Request) -> dict[str, Any]:
         run, items = state.plan_service.get(run_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _serialize_run(
-        run,
-        items,
-        source_closure=state.execution_service.get_source_closure(run_id),
-        official_automation_enabled=state.settings.official_automation_enabled,
-        official_automation_delay_min_sec=state.settings.official_automation_delay_min_sec,
-        official_automation_delay_max_sec=state.settings.official_automation_delay_max_sec,
-        source_like_automation_enabled=state.settings.source_like_automation_enabled,
-        source_like_automation_delay_min_sec=(
-            state.settings.source_like_automation_delay_min_sec
-        ),
-        source_like_automation_delay_max_sec=(
-            state.settings.source_like_automation_delay_max_sec
-        ),
-        unofficial_automation_enabled=state.settings.unofficial_automation_enabled,
-        unofficial_automation_delay_min_sec=state.settings.unofficial_automation_delay_min_sec,
-        unofficial_automation_delay_max_sec=state.settings.unofficial_automation_delay_max_sec,
-        deepseek_configured=state.settings.deepseek_configured,
-    )
+    return _serialize_run_for_state(state, run, items)
 
 
 @router.get("/api/runs/{run_id}/source-closure")
@@ -209,6 +191,7 @@ def _serialize_run(
     official_automation_delay_min_sec: float = 3.0,
     official_automation_delay_max_sec: float = 5.0,
     source_like_automation_enabled: bool = False,
+    source_like_automation_max_items_per_run: int = 15,
     source_like_automation_delay_min_sec: float = 3.0,
     source_like_automation_delay_max_sec: float = 5.0,
     unofficial_automation_enabled: bool = False,
@@ -235,6 +218,7 @@ def _serialize_run(
         "officialAutomationDelayMinSec": official_automation_delay_min_sec,
         "officialAutomationDelayMaxSec": official_automation_delay_max_sec,
         "sourceLikeAutomationEnabled": source_like_automation_enabled,
+        "sourceLikeAutomationMaxItemsPerRun": source_like_automation_max_items_per_run,
         "sourceLikeAutomationDelayMinSec": source_like_automation_delay_min_sec,
         "sourceLikeAutomationDelayMaxSec": source_like_automation_delay_max_sec,
         "unofficialAutomationEnabled": unofficial_automation_enabled,
@@ -288,6 +272,9 @@ def _serialize_run_for_state(state: Any, run: Run, items: list[RunItem]) -> dict
         official_automation_delay_min_sec=state.settings.official_automation_delay_min_sec,
         official_automation_delay_max_sec=state.settings.official_automation_delay_max_sec,
         source_like_automation_enabled=state.settings.source_like_automation_enabled,
+        source_like_automation_max_items_per_run=(
+            state.settings.source_like_automation_max_items_per_run
+        ),
         source_like_automation_delay_min_sec=(
             state.settings.source_like_automation_delay_min_sec
         ),

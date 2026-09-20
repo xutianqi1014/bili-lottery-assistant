@@ -115,5 +115,4 @@ def select_latest_entries(
 ) -> list[SourceArticleCandidate]:
     if limit < 1:
         return []
-    latest = sorted(entries, key=lambda item: item.position, reverse=True)[:limit]
-    return sorted(latest, key=lambda item: item.position, reverse=True)
+    return sorted(entries, key=lambda item: item.position, reverse=True)[:limit]

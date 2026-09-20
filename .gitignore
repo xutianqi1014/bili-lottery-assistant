@@ -1,5 +1,6 @@
-# BiliLotteryAssistant current release: v1.5.2
+# BiliLotteryAssistant current local build: v1.5.5
 .venv/
+.venv-stage123/
 __pycache__/
 *.egg-info/
 *.py[cod]

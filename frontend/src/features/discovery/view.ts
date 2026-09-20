@@ -33,6 +33,13 @@ export class DiscoveryView {
   private logs: RuntimeLogEntry[] = [];
   private nextLogId = 1;
   private runActionInFlight = false;
+  private workspaceGeneration = 0;
+  private refreshRevision = 0;
+  private planRevision = 0;
+  private discoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  private discoveryRefresh: { id: number; generation: number; dirty: boolean; promise: Promise<void> } | null = null;
+  private planRefresh: { id: number; generation: number; dirty: boolean; promise: Promise<void> } | null = null;
+  private boundSettingsForms = new WeakSet<HTMLFormElement>();
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -81,14 +88,18 @@ export class DiscoveryView {
       deepseekModel: String(formData.get("deepseekModel") ?? "").trim() || undefined,
       mentionNames,
     });
-    this.render();
+    this.render(false);
     this.setMessage("运行设置已保存；DeepSeek Key 仅保存在当前本地服务进程内。");
     this.appendLog("info", "运行设置已保存");
   }
 
   async start(): Promise<void> {
     if (!this.profile) return;
+    this.invalidateWorkspace();
+    const generation = this.workspaceGeneration;
     this.plan = null;
+    this.discovery = null;
+    this.problems = [];
     this.setMessage("正在创建只读发现任务；发现候选后将自动生成执行计划……");
     this.appendLog("info", "开始只读发现");
     let result: { discoveryId: number };
@@ -98,6 +109,7 @@ export class DiscoveryView {
       this.appendLog("error", "只读发现启动失败", { error: String(error) }, "discovery.start_failed");
       throw error;
     }
+    if (generation !== this.workspaceGeneration) return;
     rememberDiscoveryId(result.discoveryId);
     await this.refresh(result.discoveryId);
   }
@@ -105,6 +117,7 @@ export class DiscoveryView {
   selectProfile(profileId: number): void {
     const selected = this.profiles.find((item) => item.id === profileId && item.enabled);
     if (!selected || selected.id === this.profile?.id) return;
+    this.invalidateWorkspace();
     this.profile = selected;
     this.discovery = null;
     this.problems = [];
@@ -115,41 +128,99 @@ export class DiscoveryView {
     this.render();
   }
 
+  private clearDiscoveryTimer(): void {
+    if (this.discoveryTimer !== null) clearTimeout(this.discoveryTimer);
+    this.discoveryTimer = null;
+  }
+
+  private invalidateWorkspace(): void {
+    this.workspaceGeneration++;
+    this.refreshRevision++;
+    this.clearDiscoveryTimer();
+    this.discoveryRefresh = null;
+    this.planRefresh = null;
+  }
+
+  dispose(): void {
+    this.invalidateWorkspace();
+  }
+
   async refresh(id?: number): Promise<void> {
     const target = id ?? this.discovery?.id;
     if (!target) return;
-    try {
-      this.discovery = await api.getDiscovery(target);
-    } catch (error) {
-      this.appendLog("error", "读取发现状态失败", { discoveryId: target, error: String(error) }, "discovery.refresh_failed");
-      throw error;
+    this.clearDiscoveryTimer();
+    const generation = this.workspaceGeneration;
+    const existing = this.discoveryRefresh;
+    if (existing?.id === target && existing.generation === generation) {
+      existing.dirty = true;
+      return existing.promise;
     }
-    const discoveredProfile = this.profiles.find(
-      (item) => item.id === this.discovery?.profileId,
-    );
-    if (discoveredProfile) this.profile = discoveredProfile;
-    rememberDiscoveryId(target);
-    const previousProblemIds = new Set(this.problems.map((problem) => problem.id));
-    this.problems = await api.getProblems(target);
-    for (const problem of this.problems) {
-      if (!previousProblemIds.has(problem.id)) {
-        this.appendLog("error", `问题中断：${problem.problemCode}`, {
-          problemUrl: problem.problemUrl,
-          pageType: problem.pageType,
-          stage: problem.stage,
-          problemCode: problem.problemCode,
-          safeDetail: problem.safeDetail,
-          occurrenceCount: problem.occurrenceCount,
-        }, "problem.recorded");
+    const revision = ++this.refreshRevision;
+    const current = (): boolean =>
+      generation === this.workspaceGeneration && revision === this.refreshRevision;
+    const request = { id: target, generation, dirty: false, promise: Promise.resolve() };
+    this.discoveryRefresh = request;
+    request.promise = (async () => {
+      try {
+        do {
+          request.dirty = false;
+          const discovery = await api.getDiscovery(target);
+          if (!current()) return;
+          const problems = await api.getProblems(target);
+          if (!current()) return;
+          const planRevision = ++this.planRevision;
+          const plan = discovery.runPlanId ? await api.getRunPlan(discovery.runPlanId) : null;
+          if (!current()) return;
+          const previousProblemIds = new Set(this.problems.map((problem) => problem.id));
+          this.discovery = discovery;
+          this.problems = problems;
+          if (planRevision === this.planRevision) this.plan = plan;
+          this.profile = this.profiles.find((item) => item.id === discovery.profileId) ?? this.profile;
+          rememberDiscoveryId(target);
+          for (const problem of problems) {
+            if (!previousProblemIds.has(problem.id)) {
+              this.appendLog("error", `问题中断：${problem.problemCode}`, problem, "problem.recorded");
+            }
+          }
+          this.render();
+        } while (request.dirty && current());
+      } catch (error) {
+        if (!current()) return;
+        this.appendLog("error", "读取发现状态失败", { discoveryId: target, error: String(error) }, "discovery.refresh_failed");
+        throw error;
+      } finally {
+        if (this.discoveryRefresh === request) this.discoveryRefresh = null;
+        if (current() && this.discovery?.state === "running") {
+          this.discoveryTimer = setTimeout(() => {
+            this.discoveryTimer = null;
+            void this.refresh(target).catch(() => undefined);
+          }, 1200);
+        }
       }
+    })();
+    return request.promise;
+  }
+
+  handleEvent(name: string, data: unknown): void {
+    const record = data && typeof data === "object" ? data as Record<string, unknown> : {};
+    const discoveryId = record.discoveryId;
+    const runId = record.runId;
+    if (typeof discoveryId === "number" && discoveryId !== this.discovery?.id) return;
+    if (name.startsWith("run.") && typeof runId === "number"
+      && runId !== this.plan?.id && runId !== this.discovery?.runPlanId
+      && !(typeof discoveryId === "number" && discoveryId === this.discovery?.id)) return;
+    this.ingestEvent(name, data);
+    if (["discovery.ready", "discovery.failed", "discovery.plan_skipped", "discovery.plan_failed", "run.plan_created"].includes(name)
+      && typeof discoveryId === "number") {
+      void this.refresh(discoveryId).catch(() => undefined);
+    } else if (name.startsWith("run.") && typeof runId === "number") {
+      void this.refreshPlan(runId).catch(() => undefined);
     }
-    if (this.discovery.runPlanId && this.plan?.id !== this.discovery.runPlanId) {
-      this.plan = await api.getRunPlan(this.discovery.runPlanId);
-    }
-    this.render();
-    if (this.discovery.state === "running") {
-      window.setTimeout(() => void this.refresh(target), 1200);
-    }
+  }
+
+  async reconnect(): Promise<void> {
+    if (this.discovery) await this.refresh(this.discovery.id);
+    else if (this.plan) await this.refreshPlan(this.plan.id);
   }
 
   async confirmAndStartRun(): Promise<void> {
@@ -158,11 +229,16 @@ export class DiscoveryView {
     const trigger = this.root.querySelector<HTMLButtonElement>("[data-confirm-start-run]");
     if (trigger) trigger.disabled = true;
     const planId = this.plan.id;
+    const generation = this.workspaceGeneration;
     this.setMessage("正在确认计划并开始执行……");
     this.appendLog("info", `确认运行计划 #${planId} 并开始执行`);
     try {
-      this.plan = await api.confirmRunPlan(planId);
-      this.plan = await api.startRun(planId);
+      const confirmed = await api.confirmRunPlan(planId);
+      if (generation !== this.workspaceGeneration) return;
+      this.plan = confirmed;
+      const started = await api.startRun(planId);
+      if (generation !== this.workspaceGeneration) return;
+      this.plan = started;
       this.render();
     } catch (error) {
       this.appendLog("error", "确认并启动运行失败", { planId, error: String(error) }, "run.start_failed");
@@ -175,6 +251,8 @@ export class DiscoveryView {
 
   async startRun(): Promise<void> {
     if (!this.plan || this.runActionInFlight) return;
+    const generation = this.workspaceGeneration;
+    const planId = this.plan.id;
     this.runActionInFlight = true;
     const trigger = this.root.querySelector<HTMLButtonElement>("[data-start-run]");
     if (trigger) trigger.disabled = true;
@@ -183,7 +261,9 @@ export class DiscoveryView {
       : "正在排队；只会逐条打开当前动态并读取页面状态……");
     this.appendLog("info", `开始执行运行计划 #${this.plan.id}`);
     try {
-      this.plan = await api.startRun(this.plan.id);
+      const updated = await api.startRun(planId);
+      if (generation !== this.workspaceGeneration) return;
+      this.plan = updated;
       this.render();
     } catch (error) {
       this.appendLog("error", "开始执行失败", { error: String(error) }, "run.start_failed");
@@ -196,21 +276,28 @@ export class DiscoveryView {
 
   async resumeRun(): Promise<void> {
     if (!this.plan) return;
+    const generation = this.workspaceGeneration;
     this.setMessage("正在继续当前只读条目……");
     this.appendLog("info", `继续运行计划 #${this.plan.id}`);
-    this.plan = await api.resumeRun(this.plan.id);
+    const updated = await api.resumeRun(this.plan.id);
+    if (generation !== this.workspaceGeneration) return;
+    this.plan = updated;
     this.render();
   }
 
   async restartRun(): Promise<void> {
     if (!this.plan || this.runActionInFlight) return;
+    const generation = this.workspaceGeneration;
+    const planId = this.plan.id;
     this.runActionInFlight = true;
     const trigger = this.root.querySelector<HTMLButtonElement>("[data-restart-run]");
     if (trigger) trigger.disabled = true;
     this.setMessage("正在重新开始：将重新检查当前问题动态，已完成动态不会重复执行……");
     this.appendLog("info", `重新开始运行计划 #${this.plan.id}`);
     try {
-      this.plan = await api.restartRun(this.plan.id);
+      const updated = await api.restartRun(planId);
+      if (generation !== this.workspaceGeneration) return;
+      this.plan = updated;
       this.render();
     } catch (error) {
       this.appendLog("error", "重新开始运行失败", { error: String(error) }, "run.restart_failed");
@@ -240,16 +327,42 @@ export class DiscoveryView {
 
   async refreshPlan(id = this.plan?.id): Promise<void> {
     if (!id) return;
-    try {
-      this.plan = await api.getRunPlan(id);
-    } catch (error) {
-      this.appendLog("error", "读取运行计划失败", { runId: id, error: String(error) }, "run.refresh_failed");
-      throw error;
+    const generation = this.workspaceGeneration;
+    if (this.planRefresh?.id === id && this.planRefresh.generation === generation) {
+      this.planRefresh.dirty = true;
+      return this.planRefresh.promise;
     }
-    this.render();
+    const request = { id, generation, dirty: false, promise: Promise.resolve() };
+    this.planRefresh = request;
+    request.promise = (async () => {
+      try {
+        do {
+          request.dirty = false;
+          const revision = ++this.planRevision;
+          const plan = await api.getRunPlan(id);
+          if (generation !== this.workspaceGeneration || this.planRefresh !== request) return;
+          if (this.discovery && plan.discoveryRunId !== this.discovery.id) return;
+          if (revision === this.planRevision) this.plan = plan;
+          this.render();
+        } while (request.dirty);
+      } catch (error) {
+        if (generation !== this.workspaceGeneration) return;
+        this.appendLog("error", "读取运行计划失败", { runId: id, error: String(error) }, "run.refresh_failed");
+        throw error;
+      } finally {
+        if (this.planRefresh === request) this.planRefresh = null;
+      }
+    })();
+    return request.promise;
   }
 
-  render(): void {
+  render(preserveSettings = true): void {
+    // Preserve the actual live form, not a secret-bearing copy in persistent storage.
+    const form = preserveSettings && this.activePage === "overview"
+      ? this.root.querySelector<HTMLFormElement>("[data-settings-form]") : null;
+    const focused = typeof document !== "undefined" ? document.activeElement : null;
+    const restoreFocus = form && focused instanceof HTMLElement && form.contains(focused)
+      ? focused : null;
     const snapshot = this.snapshot();
     const page = this.activePage === "overview"
       ? renderOverviewPage(snapshot)
@@ -259,7 +372,9 @@ export class DiscoveryView {
           ? renderExecutionPage(snapshot)
           : renderLogsPage(snapshot);
     this.root.innerHTML = renderWorkspaceShell(this.activePage, snapshot, page);
+    if (form) this.root.querySelector("[data-settings-form]")?.replaceWith(form);
     this.bindEvents();
+    restoreFocus?.focus({ preventScroll: true });
   }
 
   private bindEvents(): void {
@@ -273,7 +388,7 @@ export class DiscoveryView {
     });
     this.root.querySelector<HTMLButtonElement>("[data-discover]")?.addEventListener(
       "click",
-      () => void this.start(),
+      () => void this.start().catch((error) => this.setMessage(String(error))),
     );
     this.root.querySelector<HTMLSelectElement>("[data-source-profile]")?.addEventListener(
       "change",
@@ -284,7 +399,10 @@ export class DiscoveryView {
         }
       },
     );
-    this.root.querySelector<HTMLFormElement>("[data-settings-form]")?.addEventListener(
+    const settingsForm = this.root.querySelector<HTMLFormElement>("[data-settings-form]");
+    if (settingsForm && !this.boundSettingsForms.has(settingsForm)) {
+      this.boundSettingsForms.add(settingsForm);
+      settingsForm.addEventListener(
       "submit",
       (event) => {
         event.preventDefault();
@@ -297,9 +415,10 @@ export class DiscoveryView {
         }
       },
     );
+    }
     this.root.querySelector<HTMLButtonElement>("[data-refresh]")?.addEventListener(
       "click",
-      () => void this.refresh(),
+      () => void this.refresh().catch((error) => this.setMessage(String(error))),
     );
     this.root.querySelector<HTMLButtonElement>("[data-confirm-start-run]")?.addEventListener(
       "click",

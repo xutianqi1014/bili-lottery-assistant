@@ -90,6 +90,7 @@ export type RunPlan = {
   officialAutomationDelayMinSec?: number;
   officialAutomationDelayMaxSec?: number;
   sourceLikeAutomationEnabled?: boolean;
+  sourceLikeAutomationMaxItemsPerRun?: number;
   sourceLikeAutomationDelayMinSec?: number;
   sourceLikeAutomationDelayMaxSec?: number;
   unofficialAutomationEnabled?: boolean;
@@ -221,8 +222,6 @@ export const api = {
       body: "{}",
     }),
   getRunPlan: (runId: number) => request<RunPlan>(`/api/runs/${runId}`),
-  getRunSourceClosure: (runId: number) =>
-    request<SourceClosureSummary>(`/api/runs/${runId}/source-closure`),
   getDiscovery: (id: number) => request<Discovery>(`/api/discoveries/${id}`),
   getProblems: (id: number) => request<Problem[]>(`/api/discoveries/${id}/problems`),
   health: () => request<{ ok: boolean; browserReady: boolean }>("/api/health")

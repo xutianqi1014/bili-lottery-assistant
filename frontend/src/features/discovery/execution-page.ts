@@ -130,6 +130,12 @@ function executionPolicy(plan: RunPlan): string {
 function renderPlan(plan: RunPlan): string {
   const stats = plan.stats;
   const blocked = Number(stats.blockedActivities ?? 0);
+  const closure = asRecord(stats.sourceClosure);
+  const sourceCount = Array.isArray(closure?.items) ? closure.items.length : 0;
+  const sourceLimit = plan.sourceLikeAutomationMaxItemsPerRun ?? 15;
+  const limitNotice = sourceCount > sourceLimit
+    ? "；来源数量超过上限，若最终可收尾数量仍超限，将停止收尾且不点击"
+    : "";
   const target = jumpTarget(plan);
   const items = plan.items.map((item) => renderPlanItem(item, item.activityId === target?.item.activityId)).join("");
   const targetDescription = target
@@ -143,6 +149,7 @@ function renderPlan(plan: RunPlan): string {
     <div class="plan-navigation"><span>${targetDescription}</span>${renderJumpCurrentButton(plan)}</div>
     <div class="metric-grid plan-metrics"><div><span>全部动态</span><strong>${stats.totalActivities ?? 0}</strong></div><div><span>计划处理</span><strong>${stats.plannedActivities ?? 0}</strong></div><div><span>跳过</span><strong>${stats.skippedActivities ?? 0}</strong></div><div><span>阻塞</span><strong>${blocked}</strong></div></div>
     <p class="status-line">${executionPolicy(plan)}</p>
+    <p class="status-line">本计划包含 ${sourceCount} 篇来源，单轮自动收尾上限 ${sourceLimit} 篇${limitNotice}。</p>
     <div class="table-wrap"><table class="run-plan-table"><colgroup><col class="run-plan-col-sequence"><col class="run-plan-col-dynamic"><col class="run-plan-col-family"><col class="run-plan-col-page-state"><col class="run-plan-col-run-state"></colgroup><thead><tr><th>序号</th><th>动态</th><th>流程</th><th>页面状态</th><th>运行状态</th></tr></thead><tbody>${items || `<tr><td colspan="5">计划为空。</td></tr>`}</tbody></table></div>
   </section>`;
   return `${planSection}${renderSourceClosure(stats)}`;

@@ -31,6 +31,7 @@ from backend.browser.manager import BrowserManager
 from backend.config import Settings
 from backend.db.engine import open_session
 from backend.db.models.run import Run, RunItem
+from backend.domain.json_utils import load_json_object as _load_object
 from backend.problems.registry import ProblemRegistry
 from backend.use_cases.official_participation_automation import (
     OfficialParticipationAutomationError,
@@ -393,12 +394,7 @@ def _result_state(state: OfficialParticipationOutcomeState) -> str:
     return "blocked_failed"
 
 
-def _load_object(value: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+
 
 
 def _should_record_problem(result: OfficialParticipationWriteResult) -> bool:

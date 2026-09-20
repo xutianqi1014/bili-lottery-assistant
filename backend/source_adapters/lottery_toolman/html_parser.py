@@ -19,7 +19,6 @@ class HtmlNode:
     attrs: dict[str, str] = field(default_factory=dict)
     parent: HtmlNode | None = None
     children: list[HtmlNode] = field(default_factory=list)
-    text_parts: list[str] = field(default_factory=list)
     content: list[str | HtmlNode] = field(default_factory=list)
 
     @property
@@ -88,7 +87,6 @@ class _TreeBuilder(HTMLParser):
                 return
 
     def handle_data(self, data: str) -> None:
-        self._stack[-1].text_parts.append(data)
         self._stack[-1].content.append(data)
 
 

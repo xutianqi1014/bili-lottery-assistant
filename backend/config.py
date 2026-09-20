@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="BILI_", env_file=".env", extra="ignore")
 
     app_name: str = "Bili Lottery Assistant"
-    version: str = "1.5.3"
+    version: str = "1.5.5"
     host: str = "127.0.0.1"
     port: int = 8787
     data_dir: Path = Path(user_data_dir("BiliLotteryAssistant", "OpenAI"))
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     source_like_automation_enabled: bool = True
     source_like_automation_delay_min_sec: float = 3.0
     source_like_automation_delay_max_sec: float = 5.0
-    source_like_automation_max_items_per_run: int = 10
+    source_like_automation_max_items_per_run: int = 15
     source_like_write_allowlist_path: Path | None = None
     unofficial_automation_enabled: bool = True
     unofficial_automation_delay_min_sec: float = 1.0

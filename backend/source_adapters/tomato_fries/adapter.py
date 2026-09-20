@@ -6,6 +6,8 @@ and interactive lotteries.  Only reservation and interactive rows are useful
 to this application; charge rows are excluded during source-article parsing.
 """
 
+from collections.abc import Sequence
+
 from backend.db.models.source import SourceProfile
 from backend.domain.entities import (
     ActivityExtractionResult,
@@ -13,8 +15,8 @@ from backend.domain.entities import (
     ReadlistCandidate,
     SourceArticleCandidate,
 )
-from backend.domain.enums import SourceFamily
 from backend.domain.ports import BrowserGateway
+from backend.source_adapters.compatibility import ReadlistSelection
 from backend.source_adapters.lottery_toolman.adapter import LotteryToolmanSourceAdapter
 from backend.source_adapters.lottery_toolman.discover_entries import discover_entries_api
 from backend.source_adapters.lottery_toolman.discover_readlists import (
@@ -56,8 +58,8 @@ class TomatoFriesSourceAdapter(LotteryToolmanSourceAdapter):
     @classmethod
     def select_readlists(
         cls,
-        candidates: list[ReadlistCandidate],
-    ) -> dict[SourceFamily, ReadlistCandidate]:
+        candidates: Sequence[ReadlistCandidate],
+    ) -> Sequence[ReadlistCandidate]:
         """Select only the named mixed collection, never ``转盘合集``."""
 
         matching = [
@@ -74,7 +76,7 @@ class TomatoFriesSourceAdapter(LotteryToolmanSourceAdapter):
                 candidate.rl_id,
             ),
         )
-        return {SourceFamily.OFFICIAL: selected}
+        return ReadlistSelection([selected])
 
     @staticmethod
     def select_latest_entries_by_published_at(

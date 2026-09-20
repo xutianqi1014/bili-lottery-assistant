@@ -1,9 +1,11 @@
 """Adapter for MID 280604312's exact 抽奖合集 collection."""
 
+from collections.abc import Sequence
+
 from backend.db.models.source import SourceProfile
 from backend.domain.entities import ReadlistCandidate, SourceArticleCandidate
-from backend.domain.enums import SourceFamily
 from backend.domain.ports import BrowserGateway
+from backend.source_adapters.compatibility import ReadlistSelection
 from backend.source_adapters.lottery_toolman.adapter import LotteryToolmanSourceAdapter
 from backend.source_adapters.lottery_toolman.discover_entries import discover_entries_api
 from backend.source_adapters.lottery_toolman.discover_readlists import discover_readlists_api
@@ -44,8 +46,8 @@ class LotteryCollectionSourceAdapter(LotteryToolmanSourceAdapter):
     @classmethod
     def select_readlists(
         cls,
-        candidates: list[ReadlistCandidate],
-    ) -> dict[SourceFamily, ReadlistCandidate]:
+        candidates: Sequence[ReadlistCandidate],
+    ) -> Sequence[ReadlistCandidate]:
         """Select only the exact 抽奖合集 collection."""
 
         matching = [
@@ -62,4 +64,4 @@ class LotteryCollectionSourceAdapter(LotteryToolmanSourceAdapter):
                 candidate.rl_id,
             ),
         )
-        return {SourceFamily.NORMAL: selected}
+        return ReadlistSelection([selected])

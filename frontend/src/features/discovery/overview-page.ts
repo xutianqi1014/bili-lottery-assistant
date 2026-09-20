@@ -1,24 +1,6 @@
 import { escapeHtml } from "../../shared/formatters";
+import { renderSourceProfile } from "./source-profile";
 import type { RenderedWorkspacePage, WorkspaceSnapshot } from "./view-types";
-
-function activityTypeLabel(profile: { activityTypes?: string[] }): string {
-  const labels: Record<string, string> = {
-    // Keep the internal ``official`` mode for execution, but show the
-    // user-facing category as interaction.
-    official: "互动",
-    unofficial: "非官方",
-    reservation: "预约",
-  };
-  return (profile.activityTypes ?? [])
-    .map((value) => labels[value] ?? value)
-    .join(" / ") || "按兼容规则";
-}
-
-function sourcePages(profile: { mid: string; uploadUrl: string; sourcePages?: Array<{ mid: string; uploadUrl: string }> }): Array<{ mid: string; uploadUrl: string }> {
-  return profile.sourcePages?.length
-    ? profile.sourcePages
-    : [{ mid: profile.mid, uploadUrl: profile.uploadUrl }];
-}
 
 function renderSettings(snapshot: WorkspaceSnapshot): string {
   const settings = snapshot.settings ?? {
@@ -48,25 +30,6 @@ function renderSettings(snapshot: WorkspaceSnapshot): string {
   </section>`;
 }
 
-function renderSource(snapshot: WorkspaceSnapshot): string {
-  const profile = snapshot.profile;
-  const pages = profile ? sourcePages(profile) : [];
-  const profilePicker = snapshot.profiles.length > 1
-    ? `<label class="source-picker">选择来源<select data-source-profile>${snapshot.profiles.map((item) => `<option value="${item.id}"${item.id === profile?.id ? " selected" : ""}>${escapeHtml(item.displayName || item.sourceKey)} · ${item.sourcePages?.length && item.sourcePages.length > 1 ? "双来源" : escapeHtml(item.mid)}</option>`).join("")}</select></label>`
-    : "";
-  return `<section class="panel source-panel">
-    <div class="panel-heading"><div><span class="kicker">SOURCE PROFILE</span><h2>当前来源</h2></div><div class="actions">${profilePicker}<button class="secondary" data-login ${profile ? "" : "disabled"}>打开登录页</button></div></div>
-    ${profile ? `<dl class="source-meta">
-      <div><dt>UP</dt><dd>${escapeHtml(profile.displayName || profile.sourceKey)}</dd></div>
-      <div><dt>UP / MID</dt><dd>${escapeHtml(pages.map((page) => page.mid).join("、"))}</dd></div>
-      <div><dt>适配器</dt><dd>${escapeHtml(profile.adapterKey)}</dd></div>
-      <div><dt>来源主页</dt><dd>${pages.map((page, index) => `<a href="${escapeHtml(page.uploadUrl)}" target="_blank" rel="noreferrer">主页${index + 1}</a>`).join(" / ")}</dd></div>
-      <div><dt>每类最新</dt><dd>${profile.latestPerFamily} 篇</dd></div>
-      <div><dt>允许动态类型</dt><dd>${escapeHtml(activityTypeLabel(profile))}</dd></div>
-    </dl>` : `<p class="empty-copy">没有启用的来源配置。</p>`}
-  </section>`;
-}
-
 function renderReadiness(snapshot: WorkspaceSnapshot): string {
   const health = snapshot.health;
   const service = health ? (health.ok ? "正常" : "不可用") : "检查中";
@@ -85,7 +48,7 @@ export function renderOverviewPage(snapshot: WorkspaceSnapshot): RenderedWorkspa
     title: "概览与准备",
     subtitle: "确认本地服务、B站浏览器会话与运行配置，再进入来源发现。",
     content: `<section class="notice"><strong>安全边界：</strong>未知、风控、控件不唯一或终态无法确认时，停止当前条目并记录问题网址；存在开放问题的来源合集本轮不点赞。</section>
-      <div class="overview-grid">${renderSource(snapshot)}${renderReadiness(snapshot)}</div>
+      <div class="overview-grid">${renderSourceProfile(snapshot, "overview")}${renderReadiness(snapshot)}</div>
       ${renderSettings(snapshot)}`,
   };
 }

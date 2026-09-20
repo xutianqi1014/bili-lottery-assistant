@@ -85,6 +85,8 @@ def add_selection(
 ) -> None:
     assert article.id is not None
     assert readlist.id is not None
+    if session.get(DiscoverySelection, (discovery_id, article.id, readlist.id)) is not None:
+        return
     session.add(
         DiscoverySelection(
             discovery_run_id=discovery_id,

@@ -1,9 +1,11 @@
 """Source adapter for 糯米是个背包's year-organised lottery columns."""
 
+from collections.abc import Sequence
+
 from backend.db.models.source import SourceProfile
 from backend.domain.entities import ReadlistCandidate, SourceArticleCandidate
-from backend.domain.enums import SourceFamily
 from backend.domain.ports import BrowserGateway
+from backend.source_adapters.compatibility import ReadlistSelection
 from backend.source_adapters.lottery_toolman.adapter import LotteryToolmanSourceAdapter
 from backend.source_adapters.lottery_toolman.discover_entries import (
     discover_entries_api,
@@ -43,8 +45,8 @@ class NuomiBackpackSourceAdapter(LotteryToolmanSourceAdapter):
 
     @staticmethod
     def select_readlists(
-        candidates: list[ReadlistCandidate],
-    ) -> dict[SourceFamily, ReadlistCandidate]:
+        candidates: Sequence[ReadlistCandidate],
+    ) -> Sequence[ReadlistCandidate]:
         """Return the one year collection selected by ``discover_readlists``."""
 
         if not candidates:
@@ -57,4 +59,4 @@ class NuomiBackpackSourceAdapter(LotteryToolmanSourceAdapter):
                 candidate.rl_id,
             ),
         )
-        return {SourceFamily.OFFICIAL: selected}
+        return ReadlistSelection([selected])

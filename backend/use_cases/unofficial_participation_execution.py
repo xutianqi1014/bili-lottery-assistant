@@ -26,6 +26,7 @@ from backend.activity_engine.unofficial.transport import DomUnofficialTransport
 from backend.browser.manager import BrowserManager
 from backend.config import Settings
 from backend.db.models.run import Run, RunItem
+from backend.domain.json_utils import load_json_object as _load_object
 from backend.integrations.deepseek import (
     DeepSeekCommentGenerationError,
     DeepSeekCommentRequest,
@@ -606,12 +607,7 @@ def _append_mentions(comment: str, names: tuple[str, ...]) -> str:
     return " ".join(part for part in (base, " ".join(missing)) if part).strip()
 
 
-def _load_object(value: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+
 
 
 def _load_json_ints(value: str) -> list[int]:

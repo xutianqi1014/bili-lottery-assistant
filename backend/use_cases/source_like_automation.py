@@ -24,6 +24,7 @@ from backend.config import Settings
 from backend.db.engine import open_session
 from backend.db.models.run import Run
 from backend.db.models.source import SourceArticle
+from backend.domain.json_utils import load_json_object as _load_object
 from backend.problems.registry import ProblemRegistry
 from backend.source_adapters.lottery_toolman.source_like import (
     InvalidSourceLikeTargetError,
@@ -486,12 +487,7 @@ def _result_from_record(
     )
 
 
-def _load_object(value: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+
 
 
 def _load_mapping(value: object) -> dict[str, Any]:

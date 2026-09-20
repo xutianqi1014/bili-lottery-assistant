@@ -28,10 +28,11 @@ class JobRunner:
         task = asyncio.create_task(self._run(job_id, callback), name=f"job:{job_id}")
         self._tasks[job_id] = task
         self._active_job_id = job_id
+        task.add_done_callback(lambda completed: self._forget(job_id, completed))
 
     async def _run(self, job_id: str, callback: Callable[[], Awaitable[None]]) -> None:
-        await self.events.publish("job.started", {"jobId": job_id})
         try:
+            await self.events.publish("job.started", {"jobId": job_id})
             await callback()
         except asyncio.CancelledError:
             await self.events.publish("job.cancelled", {"jobId": job_id})
@@ -43,6 +44,13 @@ class JobRunner:
         else:
             await self.events.publish("job.finished", {"jobId": job_id})
         finally:
+            task = asyncio.current_task()
+            if task is not None:
+                self._forget(job_id, task)
+
+    def _forget(self, job_id: str, task: asyncio.Task) -> None:
+        if self._tasks.get(job_id) is task:
+            self._tasks.pop(job_id, None)
             if self._active_job_id == job_id:
                 self._active_job_id = None
 

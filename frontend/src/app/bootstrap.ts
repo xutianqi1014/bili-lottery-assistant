@@ -10,21 +10,14 @@ export async function bootstrap(root: HTMLElement): Promise<void> {
     connectDesktopLifecycle(csrfToken);
     const view = new DiscoveryView(root);
     await view.load();
-    connectEvents((name, data) => {
-      view.ingestEvent(name, data);
-      if (
-        name === "discovery.ready"
-        || name === "discovery.failed"
-        || name === "discovery.plan_skipped"
-        || name === "discovery.plan_failed"
-      ) {
-        const id = (data as { discoveryId?: number }).discoveryId;
-        if (id) void view.refresh(id);
-      }
-      if (name.startsWith("run.")) {
-        const id = (data as { runId?: number }).runId;
-        if (id) void view.refreshPlan(id);
-      }
+    const events = connectEvents((name, data) => view.handleEvent(name, data));
+    events.addEventListener("open", () => void view.reconnect().catch(() => undefined));
+    window.addEventListener("pagehide", () => {
+      view.dispose();
+      events.close();
+    });
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) window.location.reload();
     });
   } catch (error) {
     root.innerHTML = `<section class="panel error-panel"><h1>无法连接本机服务</h1><p>${String(error)}</p><p>请先运行 <code>python -m backend.launcher</code>。</p></section>`;

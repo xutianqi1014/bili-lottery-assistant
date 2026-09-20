@@ -46,6 +46,10 @@ def run_desktop_server(
         port=settings.port,
         reload=False,
         log_level="info",
+        # Windows reset connections can leave asyncio listener shutdown pending.
+        # Bound connection draining so application lifespan cleanup still runs.
+        timeout_graceful_shutdown=5,
+
     )
     server = uvicorn.Server(config)
     lifecycle.set_shutdown_callback(lambda: _request_shutdown(server))

@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy.engine import Engine
@@ -10,21 +9,13 @@ from backend.db.engine import open_session
 from backend.db.models.discovery import DiscoveryRun
 from backend.db.models.source import Readlist
 from backend.db.repositories import activities, discoveries, profiles, readlists
-from backend.domain.entities import ActivityExtractionResult, SourceArticleCandidate
+from backend.domain.entities import SourceArticleCandidate
 from backend.domain.enums import DiscoveryDecision, LikeState
 from backend.domain.ports import SourceDiscoveryAdapter
 from backend.jobs.events import EventHub
 from backend.problems.registry import ProblemRegistry
-from backend.source_adapters.lottery_toolman.title_rules import (
-    select_latest_readlist_per_family,
-)
+from backend.source_adapters.compatibility import SourceAdapterCompatibility
 from backend.source_adapters.registry import build_adapter_registry
-
-
-@dataclass(frozen=True)
-class DiscoverySummary:
-    id: int
-    state: str
 
 
 class DiscoveryService:
@@ -61,21 +52,14 @@ class DiscoveryService:
         if adapter is None:
             await self._fail(discovery_id, "ADAPTER_NOT_FOUND", profile.adapter_key)
             return
+        adapter = SourceAdapterCompatibility(adapter)
         await self.events.publish(
             "discovery.progress",
             {"discoveryId": discovery_id, "stage": "readlists"},
         )
         try:
             candidates = list(await adapter.discover_readlists(profile, self.browser))
-            custom_selector = getattr(adapter, "select_readlists", None)
-            if callable(custom_selector):
-                selected = custom_selector(list(candidates))
-            else:
-                selected = select_latest_readlist_per_family(candidates)
-            if isinstance(selected, dict):
-                selected_candidates = list(selected.values())
-            else:
-                selected_candidates = list(selected)
+            selected_candidates = adapter.select_readlists(candidates)
             selected_rows = []
             stats = {
                 "candidateReadlists": len(candidates),
@@ -89,6 +73,7 @@ class DiscoveryService:
                 "activityParseProblems": 0,
             }
             seen_activity_ids: set[str] = set()
+            checked_articles: dict[str, tuple[str, str, str]] = {}
             for candidate in selected_candidates:
                 with open_session(self.engine) as session:
                     readlist = readlists.upsert_readlist(session, profile.id, candidate)
@@ -109,6 +94,7 @@ class DiscoveryService:
                     adapter,
                     stats,
                     seen_activity_ids,
+                    checked_articles,
                 )
             with open_session(self.engine) as session:
                 discovery_row = discoveries.get_discovery(session, discovery_id)
@@ -117,8 +103,6 @@ class DiscoveryService:
                 discoveries.save_preview(session, discovery_row, selected_rows, stats)
                 profile_row = profiles.get_profile(session, profile.id)
                 if profile_row is not None:
-                    from datetime import datetime
-
                     profile_row.last_discovery_at = datetime.now(UTC)
                     session.add(profile_row)
                     session.commit()
@@ -137,11 +121,26 @@ class DiscoveryService:
         adapter: SourceDiscoveryAdapter,
         stats: dict[str, int],
         seen_activity_ids: set[str],
+        checked_articles: dict[str, tuple[str, str, str]],
     ) -> None:
         if readlist.id is None:
             raise ValueError("READLIST_ID_MISSING")
         for rank, candidate in enumerate(entries, start=1):
-            marker = await adapter.inspect_processed_marker(candidate, self.browser)
+            previous = checked_articles.get(candidate.article_id)
+            if previous is not None:
+                # One observation per article, but retain every readlist context.
+                with open_session(self.engine) as session:
+                    article = readlists.upsert_article(session, candidate)
+                    readlists.upsert_entry(session, readlist, article, candidate)
+                    discoveries.add_selection(
+                        session, discovery_id, article, readlist, rank,
+                        candidate.position, *previous,
+                    )
+                    session.commit()
+                continue
+            observation = await adapter.observe_article(candidate, self.browser)
+            marker = observation.marker
+            extraction = observation.extraction
             decision, reason = decide_marker(marker.state)
             article_db_id: int | None = None
             with open_session(self.engine) as session:
@@ -161,9 +160,9 @@ class DiscoveryService:
                     decision.value,
                     reason,
                 )
-                extraction: ActivityExtractionResult | None = None
                 if decision == DiscoveryDecision.PROCESS:
-                    extraction = await adapter.extract_activities(candidate, self.browser)
+                    if extraction is None:
+                        raise ValueError("SOURCE_EXTRACTION_MISSING")
                     readlists.save_activity_extraction(session, article, extraction)
                     if article.id is None:
                         raise ValueError("SOURCE_ARTICLE_ID_MISSING")
@@ -178,6 +177,9 @@ class DiscoveryService:
                             ref.source_section,
                         )
                 session.commit()
+            checked_articles[candidate.article_id] = (
+                marker.state.value, decision.value, reason,
+            )
             stats["selectedArticles"] += 1
             if extraction is not None:
                 stats["sourceArticlesParsed"] += 1

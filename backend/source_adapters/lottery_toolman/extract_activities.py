@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Collection
+from typing import Any
 
 from backend.domain.entities import (
     ActivityExtractionResult,
@@ -37,6 +38,26 @@ async def extract_activities(
         )
     try:
         page = await browser.open(article.canonical_url)
+    except Exception as exc:
+        return ActivityExtractionResult(
+            status="failed",
+            reason_code="SOURCE_ARTICLE_NAVIGATION_FAILED",
+            safe_detail=f"来源专栏无法打开：{type(exc).__name__}。",
+        )
+    return await extract_activities_on_page(
+        article, page, include_sections=include_sections, excluded_sections=excluded_sections
+    )
+
+
+async def extract_activities_on_page(
+    article: SourceArticleCandidate,
+    page: Any,
+    *,
+    include_sections: Collection[str] | None = None,
+    excluded_sections: Collection[str] | None = None,
+) -> ActivityExtractionResult:
+    """Extract read-only evidence from the page used for marker inspection."""
+    try:
         html = await page.content()
     except Exception as exc:
         return ActivityExtractionResult(

@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from sqlalchemy.engine import Engine
-from sqlmodel import Session
 
 from backend.config import Settings
 from backend.db.engine import open_session
@@ -16,6 +15,7 @@ from backend.db.models.discovery import DiscoverySelection
 from backend.db.models.run import Run
 from backend.db.models.source import SourceArticle
 from backend.db.repositories import activities, discoveries, problems, runs
+from backend.domain.json_utils import load_json_object as _load_json_object
 from backend.jobs.events import EventHub
 from backend.use_cases.source_closure import calculate_source_closure
 
@@ -38,6 +38,8 @@ class PlannedItem:
     state: str
     block_reason: str | None
     action_plan: list[str]
+    family: str
+    source_section: str | None
 
 
 class ExecutionPlanService:
@@ -58,7 +60,10 @@ class ExecutionPlanService:
             all_activities = activities.list_for_discovery(session, request.discovery_id)
             if not all_activities:
                 raise ValueError("NO_DISCOVERED_ACTIVITIES")
-            selected = _select_activities(session, request, all_activities)
+            contexts_by_activity = activities.list_origin_contexts_by_activity(
+                session, request.discovery_id
+            )
+            selected = _select_activities(request, all_activities, contexts_by_activity)
             if not selected:
                 raise ValueError("NO_SELECTED_ACTIVITIES")
             problem_rows = problems.list_for_discovery(session, request.discovery_id)
@@ -67,7 +72,7 @@ class ExecutionPlanService:
                 for row in problem_rows
                 if row.status == "open" and row.source_article_id is not None
             }
-            ordered = _order_activities(session, request, selected)
+            ordered = _order_activities(request, selected, contexts_by_activity)
             item_rows: list[PlannedItem] = []
             source_ids: set[int] = set()
             planned_count = 0
@@ -105,6 +110,8 @@ class ExecutionPlanService:
                         state=item_state,
                         block_reason=block_reason,
                         action_plan=action_plan,
+                        family=family,
+                        source_section=source_section,
                     )
                 )
 
@@ -133,7 +140,6 @@ class ExecutionPlanService:
             assert run.id is not None
             for item in item_rows:
                 activity = item.activity
-                contexts = item.contexts
                 assert activity.id is not None
                 runs.add_item(
                     session,
@@ -143,9 +149,9 @@ class ExecutionPlanService:
                     dynamic_id=activity.dynamic_id,
                     canonical_url=activity.canonical_url,
                     title=activity.title,
-                    family=_primary_family(contexts, request.family_order),
-                    source_section=source_section,
-                    mode=source_section or "unknown",
+                    family=item.family,
+                    source_section=item.source_section,
+                    mode=item.source_section or "unknown",
                     unofficial_type="unknown",
                     platform_status="unchecked",
                     source_article_ids=item.source_article_ids,
@@ -205,9 +211,9 @@ def _validate_request(request: PlanRequest) -> None:
 
 
 def _select_activities(
-    session: Session,
     request: PlanRequest,
     rows: Sequence[Activity],
+    contexts_by_activity: dict[int, list[activities.OriginContext]],
 ) -> list[Activity]:
     activity_ids = set(request.activity_ids)
     source_article_ids = set(request.source_article_ids)
@@ -217,7 +223,7 @@ def _select_activities(
             continue
         if activity_ids and activity.id not in activity_ids:
             continue
-        contexts = activities.list_origin_contexts(session, request.discovery_id, activity.id)
+        contexts = contexts_by_activity.get(activity.id, [])
         context_ids = {article.id for _origin, _selection, article in contexts if article.id}
         if source_article_ids and not context_ids.intersection(source_article_ids):
             continue
@@ -226,9 +232,9 @@ def _select_activities(
 
 
 def _order_activities(
-    session: Session,
     request: PlanRequest,
     rows: Sequence[Activity],
+    contexts_by_activity: dict[int, list[activities.OriginContext]],
 ) -> list[tuple[Activity, list[tuple[ActivityOrigin, DiscoverySelection, SourceArticle]]]]:
     family_rank = {family: index for index, family in enumerate(request.family_order)}
     ordered: list[
@@ -241,7 +247,7 @@ def _order_activities(
     for activity in rows:
         if activity.id is None:
             continue
-        contexts = activities.list_origin_contexts(session, request.discovery_id, activity.id)
+        contexts = contexts_by_activity.get(activity.id, [])
         if not contexts:
             continue
         key = min(
@@ -337,11 +343,3 @@ def _primary_source_section(
         if origin.source_section in {"reservation", "interactive"}:
             return origin.source_section
     return None
-
-
-def _load_json_object(value: str) -> dict[str, object]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}

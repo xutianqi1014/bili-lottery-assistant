@@ -9,6 +9,7 @@ from backend.db.models.discovery import DiscoverySelection
 from backend.db.models.run import Run
 from backend.db.models.source import Readlist, SourceArticle
 from backend.db.repositories import activities as activity_repo
+from backend.domain.json_utils import load_json_object as _parse_json
 
 router = APIRouter(tags=["discoveries"])
 
@@ -84,9 +85,10 @@ def get_discovery(discovery_id: int, request: Request) -> dict[str, Any]:
             .where(Run.discovery_run_id == discovery_id)
             .order_by(Run.__table__.c.id.desc())  # type: ignore[attr-defined]
         ).first()
+        contexts_by_activity = activity_repo.list_origin_contexts_by_activity(session, discovery_id)
         activity_payload: list[dict[str, Any]] = []
         for activity in activity_rows:
-            contexts = activity_repo.list_origin_contexts(session, discovery_id, activity.id or 0)
+            contexts = contexts_by_activity.get(activity.id or 0, [])
             activity_payload.append(
                 {
                     "id": activity.id,
@@ -147,11 +149,3 @@ def get_discovery(discovery_id: int, request: Request) -> dict[str, Any]:
         ],
         "activities": activity_payload,
     }
-
-
-def _parse_json(value: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}

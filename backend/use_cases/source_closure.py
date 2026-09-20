@@ -131,12 +131,15 @@ def calculate_source_closure(session: Session, run: Run) -> SourceClosureSummary
         if problem.source_article_id is not None:
             problems_by_source.setdefault(problem.source_article_id, []).append(problem)
 
+    items_by_source: dict[int, list[RunItem]] = {}
+    for item in item_rows:
+        for source_id in set(_load_json_ints(item.source_article_ids_json)):
+            items_by_source.setdefault(source_id, []).append(item)
+
     rows: list[SourceClosureRow] = []
     for source_id in source_ids:
         article = articles.get(source_id)
-        related_items = [
-            item for item in item_rows if source_id in _load_json_ints(item.source_article_ids_json)
-        ]
+        related_items = items_by_source.get(source_id, [])
         source_problems = problems_by_source.get(source_id, [])
         terminal_count = sum(item.state in _TERMINAL_ITEM_STATES for item in related_items)
         pending_count = len(related_items) - terminal_count

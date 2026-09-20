@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from dataclasses import replace
 
 from backend.config import Settings
@@ -10,13 +11,17 @@ from backend.domain.entities import (
     ReadlistCandidate,
     SourceArticleCandidate,
 )
-from backend.domain.enums import SourceFamily
-from backend.domain.ports import BrowserGateway
+from backend.domain.enums import LikeState, SourceFamily
+from backend.domain.ports import BrowserGateway, SourceArticleObservation
 
 from .discover_entries import discover_entries_api
 from .discover_readlists import discover_named_readlists_api, discover_readlists_api
-from .extract_activities import extract_activities, extract_activity_refs
-from .inspect_marker import inspect_like_state
+from .extract_activities import (
+    extract_activities,
+    extract_activities_on_page,
+    extract_activity_refs,
+)
+from .inspect_marker import inspect_like_state, inspect_like_state_on_page
 from .source_like_dom import DomSourceLikeTransport
 from .title_rules import normalize_text, select_latest_entries
 
@@ -104,8 +109,8 @@ class LotteryToolmanSourceAdapter:
 
     @staticmethod
     def select_readlists(
-        candidates: list[ReadlistCandidate],
-    ) -> list[ReadlistCandidate] | dict[SourceFamily, ReadlistCandidate]:
+        candidates: Sequence[ReadlistCandidate],
+    ) -> Sequence[ReadlistCandidate]:
         """Keep the newest collection for each family on every configured page."""
 
         selected: dict[tuple[str, SourceFamily], ReadlistCandidate] = {}
@@ -132,6 +137,32 @@ class LotteryToolmanSourceAdapter:
     ) -> list[SourceArticleCandidate]:
         entries = await discover_entries_api(readlist, self.settings.request_timeout_sec)
         return select_latest_entries(entries, limit)
+
+    async def observe_article(
+        self, article: SourceArticleCandidate, browser: BrowserGateway | None
+    ) -> SourceArticleObservation:
+        """Read marker and eligible content using one navigation, without writes."""
+        if browser is None or getattr(browser, "ready", True) is False:
+            return SourceArticleObservation(
+                MarkerInspection(LikeState.UNKNOWN, "BROWSER_NOT_READY", "source_like_v1")
+            )
+        try:
+            page = await browser.open(article.canonical_url)
+        except Exception as exc:
+            return SourceArticleObservation(
+                MarkerInspection(
+                    LikeState.UNKNOWN,
+                    f"MARKER_READ_FAILED:{type(exc).__name__}",
+                    "source_like_v1",
+                )
+            )
+        marker = await inspect_like_state_on_page(page)
+        extraction = None
+        if marker.state == LikeState.UNLIKED:
+            extraction = await extract_activities_on_page(
+                article, page, include_sections=getattr(self, "INCLUDED_SECTIONS", None)
+            )
+        return SourceArticleObservation(marker, extraction)
 
     async def inspect_processed_marker(
         self, article: SourceArticleCandidate, browser: BrowserGateway | None

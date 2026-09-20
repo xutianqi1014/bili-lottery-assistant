@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 from sqlalchemy.engine import Engine
@@ -11,6 +10,7 @@ from sqlmodel import select
 from backend.db.engine import open_session
 from backend.db.models.run import Run
 from backend.db.repositories import activities, discoveries
+from backend.domain.json_utils import load_json_object as _load_json_object
 from backend.jobs.events import EventHub
 from backend.use_cases.execution_plan import ExecutionPlanService, PlanRequest
 
@@ -167,11 +167,3 @@ class AutomaticExecutionPlanService:
             else:
                 stats["automaticPlanErrorCode"] = error_code
             discoveries.update_stats(session, discovery, stats)
-
-
-def _load_json_object(value: str) -> dict[str, object]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}

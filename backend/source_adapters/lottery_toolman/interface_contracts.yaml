@@ -89,7 +89,7 @@
     eligibility: all_related_run_items_terminal_and_zero_open_problems_and_initially_unliked
     enable_switch: BILI_SOURCE_LIKE_AUTOMATION_ENABLED=true
     random_delay_seconds: [3, 5]
-    max_article_targets_per_run: 10
+    max_article_targets_per_run: 15
     per_target_manual_confirmation: false
   application_entrypoint:
     trigger: confirmed_run_reaches_all_activity_terminal_state

@@ -38,7 +38,7 @@ def add_origin(
     source_section: str | None = None,
 ) -> bool:
     assert activity.id is not None
-    origin = session.get(ActivityOrigin, (source_article_id, activity.id))
+    origin = session.get(ActivityOrigin, (source_article_id, activity.id, discovery_id))
     created = origin is None
     if origin is None:
         origin = ActivityOrigin(
@@ -92,10 +92,20 @@ def list_origins_for_activity(
     )
 
 
+OriginContext = tuple[ActivityOrigin, DiscoverySelection, SourceArticle]
+
+
 def list_origin_contexts(
     session: Session, discovery_id: int, activity_id: int
 ) -> list[tuple[ActivityOrigin, DiscoverySelection, SourceArticle]]:
-    rows = session.exec(
+    return list_origin_contexts_by_activity(session, discovery_id, activity_id).get(activity_id, [])
+
+
+def list_origin_contexts_by_activity(
+    session: Session, discovery_id: int, activity_id: int | None = None
+) -> dict[int, list[OriginContext]]:
+    """Load a discovery's contexts once, retaining every readlist membership."""
+    statement = (
         select(ActivityOrigin, DiscoverySelection, SourceArticle)
         .join(
             DiscoverySelection,
@@ -110,7 +120,11 @@ def list_origin_contexts(
         )
         .where(
             ActivityOrigin.discovered_in_run_id == discovery_id,
-            ActivityOrigin.activity_id == activity_id,
         )
-    ).all()
-    return list(rows)
+    )
+    if activity_id is not None:
+        statement = statement.where(ActivityOrigin.activity_id == activity_id)
+    grouped: dict[int, list[OriginContext]] = {}
+    for origin, selection, article in session.exec(statement).all():
+        grouped.setdefault(origin.activity_id, []).append((origin, selection, article))
+    return grouped

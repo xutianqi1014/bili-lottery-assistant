@@ -20,6 +20,34 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote, urlsplit
 
+from backend.activity_engine.shared.author_location import (
+    AuthorIdentityPolicy,
+    author_profile_ids,
+)
+from backend.activity_engine.shared.dom_read import (
+    attribute as _attribute,
+)
+from backend.activity_engine.shared.dom_read import (
+    browser_wait,
+    poll_read,
+    wait_for_unique_candidates,
+)
+from backend.activity_engine.shared.dom_read import (
+    first_text as _first_text,
+)
+from backend.activity_engine.shared.dom_read import (
+    inner_text as _inner_text,
+)
+from backend.activity_engine.shared.dom_read import (
+    normalize as _normalize,
+)
+from backend.activity_engine.shared.dom_read import (
+    page_text as _page_text,
+)
+from backend.activity_engine.shared.dom_read import (
+    visible_candidates as _visible_candidates,
+)
+
 from .actions import (
     InvalidWriteTargetError,
     UnofficialAction,
@@ -41,8 +69,7 @@ LIKE_SELECTOR = ".side-toolbar__action.like"
 # retain the generic selector as a compatibility fallback for older layouts
 # and the lightweight test/browser adapters.
 LIKE_SCOPED_SELECTOR = (
-    ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box "
-    "> .side-toolbar__action.like"
+    ".content > .sidebar-wrap > .side-toolbar > .side-toolbar__box > .side-toolbar__action.like"
 )
 LIKE_CONTENT_SCOPED_SELECTOR = ".content .sidebar-wrap .side-toolbar__action.like"
 LIKE_ACTIVE_SELECTOR = ".side-toolbar__action.like.is-active"
@@ -72,8 +99,7 @@ LIKE_ACTIVE_SELECTORS = (
 )
 FORWARD_SELECTOR = ".side-toolbar__action.forward"
 COMMENT_EDITOR_SELECTOR = (
-    'bili-comments bili-comment-box bili-comment-rich-textarea '
-    '.brt-editor[contenteditable="true"]'
+    'bili-comments bili-comment-box bili-comment-rich-textarea .brt-editor[contenteditable="true"]'
 )
 COMMENT_PUBLISH_SELECTOR = "bili-comments bili-comment-box button"
 COMMENT_REPOST_SELECTOR = 'bili-comments bili-comment-box bili-checkbox[value="sync"]'
@@ -337,15 +363,7 @@ class DomUnofficialTransport:
                 _AUTHOR_SEARCH_DELAY_MIN_SEC,
                 _AUTHOR_SEARCH_DELAY_MAX_SEC,
             )
-            matches: set[str] = set()
-            for candidate in await _visible_candidates(search_page, AUTHOR_PROFILE_SELECTOR):
-                href = await _attribute(candidate, "href")
-                name = _normalize(await _inner_text(candidate))
-                if not href or not _author_name_matches(name, author):
-                    continue
-                candidate_id = _profile_id_from_href(href)
-                if candidate_id:
-                    matches.add(candidate_id)
+            matches = await _author_profile_ids(search_page, author)
             if len(matches) != 1:
                 return _failed(
                     "FOLLOW_PROFILE_NOT_UNIQUE", "exactly one exact author profile was found"
@@ -387,38 +405,26 @@ class DomUnofficialTransport:
     async def _wait_for_author_name(self, page: Any) -> str:
         """Read the current dynamic publisher after its header has hydrated."""
 
-        latest = ""
-        attempts = min(self.poll_attempts, 6)
-        for attempt in range(attempts):
-            latest = await _first_text(page, AUTHOR_NAME_SELECTORS)
-            if latest:
-                return latest
-            if attempt + 1 < attempts:
-                wait = getattr(page, "wait_for_timeout", None)
-                if callable(wait):
-                    try:
-                        await wait(self.poll_interval_ms)
-                    except Exception:
-                        pass
-        return latest
+        return await poll_read(
+            page,
+            lambda: _first_text(page, AUTHOR_NAME_SELECTORS),
+            bool,
+            poll_attempts=min(self.poll_attempts, 6),
+            poll_interval_ms=self.poll_interval_ms,
+            wait=browser_wait,
+        )
 
     async def _wait_for_author_profile_ids(self, page: Any, author: str) -> set[str]:
         """Wait briefly for the dynamic's direct author @link to hydrate."""
 
-        latest: set[str] = set()
-        attempts = min(self.poll_attempts, 6)
-        for attempt in range(attempts):
-            latest = await _author_profile_ids(page, author)
-            if latest:
-                return latest
-            if attempt + 1 < attempts:
-                wait = getattr(page, "wait_for_timeout", None)
-                if callable(wait):
-                    try:
-                        await wait(self.poll_interval_ms)
-                    except Exception:
-                        pass
-        return latest
+        return await poll_read(
+            page,
+            lambda: _author_profile_ids(page, author),
+            bool,
+            poll_attempts=min(self.poll_attempts, 6),
+            poll_interval_ms=self.poll_interval_ms,
+            wait=browser_wait,
+        )
 
     async def _wait_for(self, page: Any, predicate: Any) -> bool:
         for attempt in range(self.poll_attempts):
@@ -451,20 +457,14 @@ class DomUnofficialTransport:
         non-unique terminal result.
         """
 
-        latest: list[Any] = []
-        attempts = min(self.poll_attempts, 6)
-        for attempt in range(attempts):
-            latest = await _visible_candidates(page, selector, text=text)
-            if len(latest) == 1:
-                return latest
-            if attempt + 1 < attempts:
-                wait = getattr(page, "wait_for_timeout", None)
-                if callable(wait):
-                    try:
-                        await wait(self.poll_interval_ms)
-                    except Exception:
-                        pass
-        return latest
+        return await wait_for_unique_candidates(
+            page,
+            selector,
+            text=text,
+            poll_attempts=min(self.poll_attempts, 6),
+            poll_interval_ms=self.poll_interval_ms,
+            wait=browser_wait,
+        )
 
     async def _wait_for_unique_like_candidates(self, page: Any) -> list[Any]:
         """Resolve the outer dynamic like control without guessing a duplicate.
@@ -501,37 +501,6 @@ class DomUnofficialTransport:
         return latest
 
 
-async def _visible_candidates(page: Any, selector: str, *, text: str | None = None) -> list[Any]:
-    locator_factory = getattr(page, "locator", None)
-    if not callable(locator_factory):
-        return []
-    locator = locator_factory(selector)
-    count_fn = getattr(locator, "count", None)
-    if not callable(count_fn):
-        return []
-    try:
-        count = int(await count_fn())
-    except Exception:
-        return []
-    result: list[Any] = []
-    for index in range(count):
-        candidate = locator.nth(index)
-        try:
-            visible = (
-                await candidate.is_visible()
-                if callable(getattr(candidate, "is_visible", None))
-                else True
-            )
-        except Exception:
-            visible = False
-        if not visible:
-            continue
-        if text is not None and _normalize(await _inner_text(candidate)) != text:
-            continue
-        result.append(candidate)
-    return result
-
-
 async def _wait_random_delay(page: Any, minimum_sec: float, maximum_sec: float) -> None:
     """Wait a random interval using the browser page when available.
 
@@ -566,40 +535,13 @@ async def _visible_count_any(page: Any, selectors: tuple[str, ...]) -> bool:
     return False
 
 
-async def _inner_text(locator: Any) -> str:
-    method = getattr(locator, "inner_text", None)
-    if not callable(method):
-        return ""
-    try:
-        return str(await method(timeout=2_000))
-    except TypeError:
-        return str(await method())
-    except Exception:
-        return ""
-
-
-async def _first_text(page: Any, selectors: tuple[str, ...]) -> str:
-    for selector in selectors:
-        values = await _visible_candidates(page, selector)
-        if values:
-            value = _normalize(await _inner_text(values[0]))
-            if value:
-                return value
-    return ""
-
-
 async def _author_profile_ids(page: Any, author: str) -> set[str]:
-    """Return numeric profile ids from visible links naming the dynamic author."""
-
-    result: set[str] = set()
-    for candidate in await _visible_candidates(page, AUTHOR_PROFILE_SELECTOR):
-        href = await _attribute(candidate, "href")
-        if not href or not _author_name_matches(_normalize(await _inner_text(candidate)), author):
-            continue
-        profile_id = _profile_id_from_href(href)
-        if profile_id:
-            result.add(profile_id)
-    return result
+    return await author_profile_ids(
+        page,
+        author,
+        selector=AUTHOR_PROFILE_SELECTOR,
+        policy=AuthorIdentityPolicy(_author_name_matches, _profile_id_from_href),
+    )
 
 
 def _author_name_matches(display_name: str, author: str) -> bool:
@@ -615,16 +557,6 @@ def _profile_id_from_href(href: str) -> str:
     path_parts = profile_parts.path.strip("/").split("/")
     profile_id = path_parts[-1] if path_parts else ""
     return profile_id if profile_id.isdigit() else ""
-
-
-async def _attribute(locator: Any, name: str) -> str:
-    method = getattr(locator, "get_attribute", None)
-    if not callable(method):
-        return ""
-    try:
-        return str(await method(name) or "")
-    except Exception:
-        return ""
 
 
 async def _fill(locator: Any, value: str) -> None:
@@ -658,16 +590,6 @@ async def _is_checked(locator: Any) -> bool:
     return await _checked(locator)
 
 
-async def _page_text(page: Any) -> str:
-    locator_factory = getattr(page, "locator", None)
-    if not callable(locator_factory):
-        return ""
-    try:
-        return _normalize(await _inner_text(locator_factory("body")))
-    except Exception:
-        return ""
-
-
 async def _security_page(page: Any) -> bool:
     for selector in _SECURITY_CHALLENGE_SELECTORS:
         if await _visible_count(page, selector) > 0:
@@ -691,10 +613,6 @@ async def _follow_done(page: Any, button: Any) -> bool:
         return True
     page_text = await _page_text(page)
     return any(marker in page_text for marker in _FOLLOW_DONE_MARKERS)
-
-
-def _normalize(value: str) -> str:
-    return " ".join(value.replace("\u200b", "").replace("\ufeff", "").split())
 
 
 def _success(

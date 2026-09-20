@@ -3,7 +3,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from backend.config import Settings
 from backend.db import models  # noqa: F401 - registers all tables
-from backend.db.migrations import apply_sqlite_migrations
+from backend.db.migrations import apply_sqlite_migrations, backup_before_snapshot_migration
 
 
 def build_engine(settings: Settings) -> Engine:
@@ -15,6 +15,7 @@ def build_engine(settings: Settings) -> Engine:
 
 
 def init_database(engine: Engine) -> None:
+    backup_before_snapshot_migration(engine)
     SQLModel.metadata.create_all(engine)
     apply_sqlite_migrations(engine)
 
