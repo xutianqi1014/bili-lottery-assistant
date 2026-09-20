@@ -189,4 +189,54 @@ describe("stage 1-3 workspace regressions", () => {
     expect(root.textContent).toContain("将停止收尾且不点击");
   });
 
+  it("coalesces log bursts and a plan response without replacing navigation or existing rows", async () => {
+    vi.useFakeTimers();
+    location.hash = "#logs";
+    const { root, view } = await setup();
+    const nav = root.querySelector('[data-view="overview"]');
+    const first = root.querySelector("[data-log-id]");
+    const copy = root.querySelector("[data-copy-logs]");
+    const render = vi.spyOn(view, "render");
+    for (let i = 0; i < 20; i++) view.ingestEvent("run.item_updated", { sequence: i });
+    await view.refreshPlan(9);
+    await vi.advanceTimersByTimeAsync(32);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(root.querySelectorAll("[data-log-id]")).toHaveLength(21);
+    expect(root.querySelector('[data-view="overview"]')).toBe(nav);
+    expect(root.querySelector("[data-log-id]")).toBe(first);
+    expect(root.querySelector("[data-copy-logs]")).toBe(copy);
+    expect(root.querySelector(".workflow-rail")?.textContent).toContain("running");
+  });
+
+  it("bounds incremental logs, redacts details and clears them with the original button", async () => {
+    vi.useFakeTimers();
+    location.hash = "#logs";
+    const { root, view } = await setup();
+    const clear = root.querySelector<HTMLButtonElement>("[data-clear-logs]")!;
+    for (let i = 0; i < 600; i++) view.ingestEvent("run.item_updated", { sequence: i });
+    view.ingestEvent("run.waiting_user", { secret: "secret-value", reason: "<script>bad</script>" });
+    await vi.advanceTimersByTimeAsync(32);
+    expect(root.querySelectorAll("[data-log-id]")).toHaveLength(500);
+    expect(root.textContent).toContain("[REDACTED]");
+    expect(root.textContent).not.toContain("secret-value");
+    expect(root.querySelector("script")).toBeNull();
+    expect(root.querySelector("[data-log-description]")?.textContent).toContain("500 条记录");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    clear.click();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(root.querySelectorAll("[data-log-id]")).toHaveLength(0);
+    expect(clear.disabled).toBe(true);
+    expect(root.querySelector(".runtime-log-empty")).not.toBeNull();
+  });
+
+  it("cancels scheduled log updates on dispose", async () => {
+    vi.useFakeTimers();
+    location.hash = "#logs";
+    const { view } = await setup();
+    const render = vi.spyOn(view, "render");
+    view.ingestEvent("run.item_updated", {});
+    view.dispose();
+    await vi.advanceTimersByTimeAsync(32);
+    expect(render).not.toHaveBeenCalled();
+  });
 });

@@ -8,6 +8,7 @@ from backend.api.dependencies import get_state, require_csrf
 from backend.db.models.run import Run, RunItem
 from backend.use_cases.execution_plan import PlanRequest
 from backend.use_cases.run_stats import reconcile_run_item_stats
+from backend.use_cases.source_closure import SourceClosureSummary
 
 router = APIRouter(tags=["runs"])
 
@@ -48,7 +49,7 @@ async def create_run(
             )
         )
         await state.plan_service.publish_created(run)
-        return _serialize_run_for_state(state, *state.plan_service.get(run.id or 0))
+        return _serialize_run_for_state(state, *state.plan_service.get_snapshot(run.id or 0))
     except ValueError as exc:
         code = str(exc)
         status_code = 404 if code in {"DISCOVERY_NOT_FOUND", "RUN_NOT_FOUND"} else 409
@@ -59,10 +60,10 @@ async def create_run(
 def get_run(run_id: int, request: Request) -> dict[str, Any]:
     state = get_state(request)
     try:
-        run, items = state.plan_service.get(run_id)
+        snapshot = state.plan_service.get_snapshot(run_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _serialize_run_for_state(state, run, items)
+    return _serialize_run_for_state(state, *snapshot)
 
 
 @router.get("/api/runs/{run_id}/source-closure")
@@ -85,7 +86,7 @@ async def confirm_run(
     try:
         run = state.plan_service.confirm(run_id, payload.note)
         await state.plan_service.publish_confirmed(run)
-        return _serialize_run_for_state(state, *state.plan_service.get(run_id))
+        return _serialize_run_for_state(state, *state.plan_service.get_snapshot(run_id))
     except ValueError as exc:
         code = str(exc)
         status_code = 404 if code == "RUN_NOT_FOUND" else 409
@@ -145,7 +146,7 @@ async def restart_run(
                 "previousState": previous_state,
             },
         )
-        return _serialize_run_for_state(state, *state.plan_service.get(run_id))
+        return _serialize_run_for_state(state, *state.plan_service.get_snapshot(run_id))
     except ValueError as exc:
         code = str(exc)
         status_code = 404 if code == "RUN_NOT_FOUND" else 409
@@ -175,7 +176,7 @@ async def _queue_execution(
         except RuntimeError as exc:
             state.execution_service.rollback_queue(run_id, previous_state)
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return _serialize_run_for_state(state, *state.plan_service.get(run_id))
+        return _serialize_run_for_state(state, *state.plan_service.get_snapshot(run_id))
     except ValueError as exc:
         code = str(exc)
         status_code = 404 if code == "RUN_NOT_FOUND" else 409
@@ -262,12 +263,14 @@ def _serialize_run(
     }
 
 
-def _serialize_run_for_state(state: Any, run: Run, items: list[RunItem]) -> dict[str, Any]:
+def _serialize_run_for_state(
+    state: Any, run: Run, items: list[RunItem], source_closure: SourceClosureSummary,
+) -> dict[str, Any]:
     assert run.id is not None
     return _serialize_run(
         run,
         items,
-        source_closure=state.execution_service.get_source_closure(run.id),
+        source_closure=source_closure.to_payload(),
         official_automation_enabled=state.settings.official_automation_enabled,
         official_automation_delay_min_sec=state.settings.official_automation_delay_min_sec,
         official_automation_delay_max_sec=state.settings.official_automation_delay_max_sec,

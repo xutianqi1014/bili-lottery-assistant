@@ -31,6 +31,7 @@ from backend.browser.manager import BrowserManager
 from backend.config import Settings
 from backend.db.engine import open_session
 from backend.db.models.run import Run, RunItem
+from backend.domain.json_utils import load_json_ints as _load_json_ints
 from backend.domain.json_utils import load_json_object as _load_object
 from backend.problems.registry import ProblemRegistry
 from backend.use_cases.official_participation_automation import (
@@ -404,14 +405,6 @@ def _should_record_problem(result: OfficialParticipationWriteResult) -> bool:
     } and result.code != "LOTTERY_EXPIRED"
 
 
-def _load_json_ints(value: str) -> list[int]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [item for item in parsed if isinstance(item, int)]
 
 
 def _now() -> str:

@@ -9,10 +9,10 @@ import {
 import { renderDiscoveryPage } from "./discovery-page";
 import { renderExecutionPage } from "./execution-page";
 import { renderOverviewPage } from "./overview-page";
-import { formatRuntimeLogs, renderLogsPage } from "./runtime-logs";
+import { formatRuntimeLogs, renderLogsPage, updateLogsPage } from "./runtime-logs";
 import type { HealthStatus, RuntimeLogEntry, WorkspacePage, WorkspaceSnapshot } from "./view-types";
 import { WORKSPACE_PAGES } from "./view-types";
-import { renderWorkspaceShell } from "./workspace-shell";
+import { renderWorkspaceShell, updateWorkspaceStatus } from "./workspace-shell";
 import {
   forgetDiscoveryId,
   recallDiscoveryId,
@@ -40,6 +40,7 @@ export class DiscoveryView {
   private discoveryRefresh: { id: number; generation: number; dirty: boolean; promise: Promise<void> } | null = null;
   private planRefresh: { id: number; generation: number; dirty: boolean; promise: Promise<void> } | null = null;
   private boundSettingsForms = new WeakSet<HTMLFormElement>();
+  private logRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -134,6 +135,7 @@ export class DiscoveryView {
   }
 
   private invalidateWorkspace(): void {
+    this.cancelLogRender();
     this.workspaceGeneration++;
     this.refreshRevision++;
     this.clearDiscoveryTimer();
@@ -342,8 +344,10 @@ export class DiscoveryView {
           const plan = await api.getRunPlan(id);
           if (generation !== this.workspaceGeneration || this.planRefresh !== request) return;
           if (this.discovery && plan.discoveryRunId !== this.discovery.id) return;
-          if (revision === this.planRevision) this.plan = plan;
-          this.render();
+          if (revision === this.planRevision) {
+            this.plan = plan;
+            this.render();
+          }
         } while (request.dirty);
       } catch (error) {
         if (generation !== this.workspaceGeneration) return;
@@ -357,13 +361,18 @@ export class DiscoveryView {
   }
 
   render(preserveSettings = true): void {
+    this.cancelLogRender();
+    const snapshot = this.snapshot();
+    if (this.activePage === "logs" && updateLogsPage(this.root, snapshot)) {
+      updateWorkspaceStatus(this.root, snapshot, this.activePage);
+      return;
+    }
     // Preserve the actual live form, not a secret-bearing copy in persistent storage.
     const form = preserveSettings && this.activePage === "overview"
       ? this.root.querySelector<HTMLFormElement>("[data-settings-form]") : null;
     const focused = typeof document !== "undefined" ? document.activeElement : null;
     const restoreFocus = form && focused instanceof HTMLElement && form.contains(focused)
       ? focused : null;
-    const snapshot = this.snapshot();
     const page = this.activePage === "overview"
       ? renderOverviewPage(snapshot)
       : this.activePage === "discovery"
@@ -546,7 +555,17 @@ export class DiscoveryView {
       event,
     };
     this.logs = [...this.logs, entry].slice(-500);
-    if (this.activePage === "logs" && this.root.isConnected) this.render();
+    if (this.activePage === "logs" && this.root.isConnected && this.logRenderTimer === null) {
+      this.logRenderTimer = setTimeout(() => {
+        this.logRenderTimer = null;
+        if (this.root.isConnected && this.activePage === "logs") this.render();
+      }, 16);
+    }
+  }
+
+  private cancelLogRender(): void {
+    if (this.logRenderTimer !== null) clearTimeout(this.logRenderTimer);
+    this.logRenderTimer = null;
   }
 
   private async copyLogs(): Promise<void> {

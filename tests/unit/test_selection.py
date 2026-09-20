@@ -1,4 +1,5 @@
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -30,6 +31,41 @@ def candidate(title, family, suffix, rl_id, updated=None, source_mid=None):
         observed_updated_at=updated,
         source_mid=source_mid,
     )
+
+
+@pytest.mark.parametrize("adapter,title,error", [
+    (LotteryCollectionSourceAdapter, "抽奖合集", "READLIST_LOTTERY_COLLECTION_NOT_FOUND"),
+    (TomatoFriesSourceAdapter, "互动抽奖", "READLIST_INTERACTIVE_NOT_FOUND"),
+])
+def test_named_selection_keeps_normalization_ties_and_error_codes(adapter, title, error):
+    rows = [
+        candidate(title + "2", SourceFamily.NORMAL, 1, "99", updated=999),
+        candidate(" ".join(title), SourceFamily.NORMAL, 1, "9", updated=10),
+        candidate(title, SourceFamily.NORMAL, 1, "10", updated=10),
+        candidate(title, SourceFamily.NORMAL, 1, "90", updated=None),
+    ]
+    for ordered in (rows, list(reversed(rows))):
+        selected = adapter.select_readlists(ordered)
+        assert selected[0] is rows[1]
+        assert selected[SourceFamily.NORMAL] is rows[1]
+    with pytest.raises(ValueError, match=f"^{error}$"):
+        adapter.select_readlists([rows[0]])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("adapter", [NuomiBackpackSourceAdapter, LotteryCollectionSourceAdapter])
+@pytest.mark.parametrize("limit", [0, 3, 20])
+async def test_inherited_article_discovery_keeps_limits_order_and_timeout(
+    adapter, limit, monkeypatch,
+):
+    rows = [SourceArticleCandidate(str(i), f"https://x/{i}", str(i), i) for i in [2, 5, 1, 4, 3]]
+    fetch = AsyncMock(return_value=rows)
+    monkeypatch.setattr(lottery_toolman_adapter, "discover_entries_api", fetch)
+    readlist = candidate("抽奖合集", SourceFamily.NORMAL, 1, "9")
+    result = await adapter(Settings(request_timeout_sec=17)).discover_entries(readlist, limit, None)
+    assert [row.position for row in result] == [5, 4, 3, 2, 1][:limit]
+    fetch.assert_awaited_once_with(readlist, 17)
+    assert [row.position for row in rows] == [2, 5, 1, 4, 3]
 
 
 def test_selects_maximum_suffix_per_family():

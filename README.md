@@ -2,7 +2,7 @@
 
 本项目是一个本机运行的 B 站互动抽奖助手，使用 HTML 控制台操作，浏览器端通过 Playwright 执行页面可见的读写动作。
 
-当前版本：`1.5.5`
+当前版本：`1.6.0`。包含运行数据读取与日志更新优化、来源适配器精简及无引用旧模块清理。
 
 当前内置来源：
 
@@ -19,11 +19,9 @@
 
 ## 快速使用
 
-Windows 完整包：[`BiliLotteryAssistant-windows-x64-v1.5.5.zip`](https://github.com/xutianqi1014/bili-lottery-assistant/releases/download/v1.5.5/BiliLotteryAssistant-windows-x64-v1.5.5.zip)。完整解压后启动 `BiliLotteryAssistant.exe`，必须保留 `_internal` 目录。阶段 4～5 的实施和验证见 [实施记录](docs/阶段4-5实施与构建记录.md)。
+Windows 完整包：[`BiliLotteryAssistant-windows-x64-v1.6.0.zip`](https://github.com/xutianqi1014/bili-lottery-assistant/releases/download/v1.6.0/BiliLotteryAssistant-windows-x64-v1.6.0.zip)。完整解压后启动 `BiliLotteryAssistant.exe`，必须保留 `_internal` 目录。阶段 4～5 的实施和验证见 [实施记录](docs/阶段4-5实施与构建记录.md)。
 
-下载后请核对 SHA-256：`95A8B465C23148DAECC956F522E1805BB395B85E190ADD613ACE2F759795CA1D`（63,787,341 bytes，约 60.83 MiB）。目录版 EXE SHA-256：`98E53F9C63713AC8C7A861938122AD7F3B2A8C18FF077DD950B97A777F6A8D45`。
-
-GitHub Release 单个资产限制为 2 GiB；本版本仅需上传一个完整 ZIP，解压后保留目录结构及同级 `_internal` 目录。
+下载后请核对 SHA-256：`367CDA1FFA9797E3F20B7B5CA4FB6DAD6AE9BF225407A4190FD3F87BF4C9875D`（63,783,578 bytes，约 60.83 MiB）。目录版 EXE SHA-256：`A5BF21CA45C9668BF853BBEAB31AC2E426353BDA77F55752F1CC7B286B682000`。完整包低于 GitHub Release 单个资产 2 GiB 的限制，使用一个 ZIP 发布并完整保留目录结构。
 
 程序会自动启动本地服务并打开：
 
@@ -94,4 +92,3 @@ pnpm test
 pnpm run typecheck
 pnpm run build
 ```
-

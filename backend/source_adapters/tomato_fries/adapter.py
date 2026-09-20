@@ -25,7 +25,7 @@ from backend.source_adapters.lottery_toolman.discover_readlists import (
 from backend.source_adapters.lottery_toolman.extract_activities import (
     extract_activities,
 )
-from backend.source_adapters.lottery_toolman.title_rules import normalize_text
+from backend.source_adapters.lottery_toolman.title_rules import select_latest_named_readlist
 
 
 class TomatoFriesSourceAdapter(LotteryToolmanSourceAdapter):
@@ -62,19 +62,8 @@ class TomatoFriesSourceAdapter(LotteryToolmanSourceAdapter):
     ) -> Sequence[ReadlistCandidate]:
         """Select only the named mixed collection, never ``转盘合集``."""
 
-        matching = [
-            candidate
-            for candidate in candidates
-            if normalize_text(candidate.title) == normalize_text(cls.READLIST_NAME)
-        ]
-        if not matching:
-            raise ValueError("READLIST_INTERACTIVE_NOT_FOUND")
-        selected = max(
-            matching,
-            key=lambda candidate: (
-                candidate.observed_updated_at or -1,
-                candidate.rl_id,
-            ),
+        selected = select_latest_named_readlist(
+            candidates, cls.READLIST_NAME, not_found_code="READLIST_INTERACTIVE_NOT_FOUND",
         )
         return ReadlistSelection([selected])
 

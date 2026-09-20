@@ -12,12 +12,12 @@ from backend.config import Settings
 from backend.db.engine import open_session
 from backend.db.models.activity import Activity, ActivityOrigin
 from backend.db.models.discovery import DiscoverySelection
-from backend.db.models.run import Run
+from backend.db.models.run import Run, RunItem
 from backend.db.models.source import SourceArticle
 from backend.db.repositories import activities, discoveries, problems, runs
 from backend.domain.json_utils import load_json_object as _load_json_object
 from backend.jobs.events import EventHub
-from backend.use_cases.source_closure import calculate_source_closure
+from backend.use_cases.source_closure import SourceClosureSummary, calculate_source_closure
 
 
 @dataclass(frozen=True)
@@ -170,12 +170,25 @@ class ExecutionPlanService:
             session.refresh(run)
         return run
 
-    def get(self, run_id: int) -> tuple[Run, list]:
+    def get(self, run_id: int) -> tuple[Run, list[RunItem]]:
         with open_session(self.engine) as session:
             run = runs.get_run(session, run_id)
             if run is None:
                 raise ValueError("RUN_NOT_FOUND")
             return run, runs.list_items(session, run_id)
+
+    def get_snapshot(self, run_id: int) -> tuple[Run, list[RunItem], SourceClosureSummary]:
+        """Read response data together and reuse the ordered items for closure."""
+        with open_session(self.engine) as session:
+            # sqlite3 legacy mode does not start a read transaction on SELECT.
+            # Explicit BEGIN keeps the run, items and closure on one snapshot.
+            if self.engine.dialect.name == "sqlite":
+                session.connection().exec_driver_sql("BEGIN")
+            run = runs.get_run(session, run_id)
+            if run is None:
+                raise ValueError("RUN_NOT_FOUND")
+            items = runs.list_items(session, run_id)
+            return run, items, calculate_source_closure(session, run, items=items)
 
     def confirm(self, run_id: int, note: str = "用户已确认计划") -> Run:
         with open_session(self.engine) as session:

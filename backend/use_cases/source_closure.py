@@ -7,7 +7,7 @@ related activity reaches a terminal state.
 
 from __future__ import annotations
 
-import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 from backend.db.models.problem import ProblemRecord
 from backend.db.models.run import Run, RunItem
 from backend.db.models.source import SourceArticle
+from backend.domain.json_utils import load_json_ints as _load_json_ints
 
 _TERMINAL_ITEM_STATES = frozenset({"completed", "skipped"})
 
@@ -87,8 +88,10 @@ class SourceClosureService:
     def __init__(self, engine: Engine):
         self.engine = engine
 
-    def calculate(self, session: Session, run: Run) -> SourceClosureSummary:
-        return calculate_source_closure(session, run)
+    def calculate(
+        self, session: Session, run: Run, *, items: Sequence[RunItem] | None = None,
+    ) -> SourceClosureSummary:
+        return calculate_source_closure(session, run, items=items)
 
     def get(self, run_id: int) -> SourceClosureSummary:
         with Session(self.engine) as session:
@@ -98,7 +101,9 @@ class SourceClosureService:
             return self.calculate(session, run)
 
 
-def calculate_source_closure(session: Session, run: Run) -> SourceClosureSummary:
+def calculate_source_closure(
+    session: Session, run: Run, *, items: Sequence[RunItem] | None = None,
+) -> SourceClosureSummary:
     """Build a deterministic closure summary from the current run ledger."""
 
     assert run.id is not None
@@ -115,7 +120,7 @@ def calculate_source_closure(session: Session, run: Run) -> SourceClosureSummary
         ).all()
         if article.id is not None
     }
-    item_rows = list(
+    item_rows = items if items is not None else list(
         session.exec(select(RunItem).where(RunItem.run_id == run.id)).all()
     )
     problems = list(
@@ -202,13 +207,3 @@ def calculate_source_closure(session: Session, run: Run) -> SourceClosureSummary
             )
         )
     return SourceClosureSummary(run_id=run.id, rows=tuple(rows))
-
-
-def _load_json_ints(value: str) -> list[int]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [item for item in parsed if isinstance(item, int)]

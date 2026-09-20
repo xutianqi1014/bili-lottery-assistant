@@ -38,6 +38,19 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", "", unicodedata.normalize("NFKC", value or ""))
 
 
+def select_latest_named_readlist(
+    candidates: Iterable[ReadlistCandidate], name: str, *, not_found_code: str,
+) -> ReadlistCandidate:
+    """Select an exact normalized title, then newest update and readlist ID."""
+    title = normalize_text(name)
+    matching = [candidate for candidate in candidates if normalize_text(candidate.title) == title]
+    if not matching:
+        raise ValueError(not_found_code)
+    return max(matching, key=lambda candidate: (
+        candidate.observed_updated_at or -1, candidate.rl_id,
+    ))
+
+
 def parse_chinese_number(value: str) -> int | None:
     if not value or any(
         char not in _CHINESE_DIGITS and char not in _CHINESE_UNITS for char in value

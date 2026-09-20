@@ -3,17 +3,13 @@
 from collections.abc import Sequence
 
 from backend.db.models.source import SourceProfile
-from backend.domain.entities import ReadlistCandidate, SourceArticleCandidate
+from backend.domain.entities import ReadlistCandidate
 from backend.domain.ports import BrowserGateway
 from backend.source_adapters.compatibility import ReadlistSelection
 from backend.source_adapters.lottery_toolman.adapter import LotteryToolmanSourceAdapter
-from backend.source_adapters.lottery_toolman.discover_entries import (
-    discover_entries_api,
-)
 from backend.source_adapters.lottery_toolman.discover_readlists import (
     discover_year_readlist_api,
 )
-from backend.source_adapters.lottery_toolman.title_rules import select_latest_entries
 
 
 class NuomiBackpackSourceAdapter(LotteryToolmanSourceAdapter):
@@ -33,15 +29,6 @@ class NuomiBackpackSourceAdapter(LotteryToolmanSourceAdapter):
         del browser
         return await discover_year_readlist_api(profile.mid, self.settings.request_timeout_sec)
 
-    async def discover_entries(
-        self,
-        readlist: ReadlistCandidate,
-        limit: int,
-        browser: BrowserGateway | None,
-    ) -> list[SourceArticleCandidate]:
-        del browser
-        entries = await discover_entries_api(readlist, self.settings.request_timeout_sec)
-        return select_latest_entries(entries, limit)
 
     @staticmethod
     def select_readlists(

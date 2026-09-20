@@ -107,6 +107,14 @@ function healthLabel(snapshot: WorkspaceSnapshot): string {
     : "服务正常 · 浏览器将在需要时启动";
 }
 
+export function updateWorkspaceStatus(root: HTMLElement, snapshot: WorkspaceSnapshot, page: WorkspacePage): void {
+  const rail = root.querySelector<HTMLElement>(".workflow-rail");
+  const markup = renderWorkflowRail(snapshot, page);
+  if (rail && rail.outerHTML !== markup) rail.outerHTML = markup;
+  const health = root.querySelector<HTMLElement>("[data-health]");
+  if (health) health.textContent = healthLabel(snapshot);
+}
+
 export function renderWorkspaceShell(
   activePage: WorkspacePage,
   snapshot: WorkspaceSnapshot,

@@ -12,6 +12,7 @@ from backend.db.engine import open_session
 from backend.db.models.activity import Activity
 from backend.db.models.run import Run, RunItem
 from backend.db.repositories import runs
+from backend.domain.json_utils import load_json_ints as _load_json_ints
 from backend.domain.json_utils import load_json_object as _load_json_object
 from backend.problems.registry import ProblemRegistry
 from backend.use_cases.official_participation_execution import OfficialParticipationExecutionService
@@ -325,7 +326,7 @@ class RunExecutionStore:
                     session.exec(select(RunItem).where(RunItem.run_id == run.id)).all()
                 )
                 run_stats["sourceClosure"] = self.source_closure.calculate(
-                    session, run_row
+                    session, run_row, items=run_items
                 ).to_payload()
                 run_stats = reconcile_run_item_stats(run_stats, run_items)
                 run_stats["lastRuntimeResult"] = outcome.result_code
@@ -344,7 +345,9 @@ class RunExecutionStore:
             stats = _load_json_object(run.stats_json)
             items = list(session.exec(select(RunItem).where(RunItem.run_id == run_id)).all())
             stats = reconcile_run_item_stats(stats, items)
-            stats["sourceClosure"] = self.source_closure.calculate(session, run).to_payload()
+            stats["sourceClosure"] = self.source_closure.calculate(
+                session, run, items=items
+            ).to_payload()
             run.stats_json = json.dumps(stats, ensure_ascii=False)
             session.add(run)
             session.commit()
@@ -485,13 +488,3 @@ def _clear_restartable_unofficial_write(stats: dict[str, Any], activity_id: int)
         stats.pop("unofficialParticipationWrites", None)
     if stats.get("unofficialParticipationLastResult") == previous_result:
         stats.pop("unofficialParticipationLastResult", None)
-
-
-def _load_json_ints(value: str) -> list[int]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [item for item in parsed if isinstance(item, int)]

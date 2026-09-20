@@ -218,6 +218,32 @@ class RunExecutionService:
         maximum = max(minimum, self.settings.unofficial_automation_delay_max_sec)
         return random.uniform(minimum, maximum)
 
+    async def _publish_item_updated(
+        self, run_id: int, item: RunItem, *, state: str,
+        result_code: str, mode: str, platform_status: str,
+    ) -> None:
+        await self.events.publish(
+            "run.item_updated",
+            {
+                "runId": run_id, "activityId": item.activity_id,
+                "sequence": item.sequence, "state": state,
+                "resultCode": result_code, "mode": mode,
+                "platformStatus": platform_status,
+            },
+        )
+
+    async def _publish_item_waiting(
+        self, run_id: int, item: RunItem, *, state: str, reason: str | None,
+    ) -> None:
+        await self.events.publish(
+            "run.waiting_user",
+            {
+                "runId": run_id, "state": state,
+                "activityId": item.activity_id, "sequence": item.sequence,
+                "reason": reason,
+            },
+        )
+
     async def _execute_automatic_official(
         self,
         run: Run,
@@ -259,48 +285,29 @@ class RunExecutionService:
             self._record_runtime_problem(run, item, code, message)
             self._refresh_source_closure(run_id)
             waiting = self._set_waiting(run_id, message)
-            await self.events.publish(
-                "run.waiting_user",
-                {
-                    "runId": run_id,
-                    "state": waiting.state,
-                    "activityId": item.activity_id,
-                    "sequence": item.sequence,
-                    "reason": message,
-                },
+            await self._publish_item_waiting(
+                run_id, item, state=waiting.state, reason=message,
             )
             return False
 
         self._refresh_source_closure(run_id)
-        await self.events.publish(
-            "run.item_updated",
-            {
-                "runId": run_id,
-                "activityId": item.activity_id,
-                "sequence": item.sequence,
-                "state": result["state"],
-                "resultCode": result["resultCode"],
-                "mode": (
-                    "reservation"
-                    if result["resultCode"] in {"ALREADY_RESERVED", "RESERVATION_CONFIRMED"}
-                    or str(result["resultCode"]).startswith("RESERVATION_")
-                    else "official"
-                ),
-                "platformStatus": result["resultState"],
-            },
+        await self._publish_item_updated(
+            run_id, item,
+            state=result["state"],
+            result_code=result["resultCode"],
+            mode=(
+                "reservation"
+                if result["resultCode"] in {"ALREADY_RESERVED", "RESERVATION_CONFIRMED"}
+                or str(result["resultCode"]).startswith("RESERVATION_")
+                else "official"
+            ),
+            platform_status=result["resultState"],
         )
         if result["state"] == "completed":
             return True
         waiting = self._set_waiting(run_id, str(result["resultMessage"]))
-        await self.events.publish(
-            "run.waiting_user",
-            {
-                "runId": run_id,
-                "state": waiting.state,
-                "activityId": item.activity_id,
-                "sequence": item.sequence,
-                "reason": result["resultMessage"],
-            },
+        await self._publish_item_waiting(
+            run_id, item, state=waiting.state, reason=result["resultMessage"],
         )
         return False
 
@@ -353,17 +360,12 @@ class RunExecutionService:
         if outcome.item_state == "skipped":
             self._persist_outcome(run, item, outcome)
             self._refresh_source_closure(run_id)
-            await self.events.publish(
-                "run.item_updated",
-                {
-                    "runId": run_id,
-                    "activityId": item.activity_id,
-                    "sequence": item.sequence,
-                    "state": outcome.item_state,
-                    "resultCode": outcome.result_code,
-                    "mode": outcome.mode,
-                    "platformStatus": outcome.platform_status,
-                },
+            await self._publish_item_updated(
+                run_id, item,
+                state=outcome.item_state,
+                result_code=outcome.result_code,
+                mode=outcome.mode,
+                platform_status=outcome.platform_status,
             )
             return True
 
@@ -410,30 +412,18 @@ class RunExecutionService:
     ) -> bool:
         run_id = run.id or 0
         self._persist_outcome(run, item, outcome)
-        await self.events.publish(
-            "run.item_updated",
-            {
-                "runId": run_id,
-                "activityId": item.activity_id,
-                "sequence": item.sequence,
-                "state": outcome.item_state,
-                "resultCode": outcome.result_code,
-                "mode": outcome.mode,
-                "platformStatus": outcome.platform_status,
-            },
+        await self._publish_item_updated(
+            run_id, item,
+            state=outcome.item_state,
+            result_code=outcome.result_code,
+            mode=outcome.mode,
+            platform_status=outcome.platform_status,
         )
         if outcome.item_state == "waiting_user":
             self._record_runtime_problem(run, item, outcome.result_code, outcome.result_message)
             waiting = self._set_waiting(run_id, outcome.result_message)
-            await self.events.publish(
-                "run.waiting_user",
-                {
-                    "runId": run_id,
-                    "state": waiting.state,
-                    "activityId": item.activity_id,
-                    "sequence": item.sequence,
-                    "reason": outcome.result_message,
-                },
+            await self._publish_item_waiting(
+                run_id, item, state=waiting.state, reason=outcome.result_message,
             )
             return False
         return True
@@ -561,29 +551,17 @@ class RunExecutionService:
             if outcome.item_state == "waiting_user":
                 self._record_runtime_problem(run, item, outcome.result_code, outcome.result_message)
             self._refresh_source_closure(run_id)
-            await self.events.publish(
-                "run.item_updated",
-                {
-                    "runId": run_id,
-                    "activityId": item.activity_id,
-                    "sequence": item.sequence,
-                    "state": outcome.item_state,
-                    "resultCode": outcome.result_code,
-                    "mode": outcome.mode,
-                    "platformStatus": outcome.platform_status,
-                },
+            await self._publish_item_updated(
+                run_id, item,
+                state=outcome.item_state,
+                result_code=outcome.result_code,
+                mode=outcome.mode,
+                platform_status=outcome.platform_status,
             )
             if outcome.item_state in {"waiting_user", "running"}:
                 waiting = self._set_waiting(run_id, outcome.result_message)
-                await self.events.publish(
-                    "run.waiting_user",
-                    {
-                        "runId": run_id,
-                        "state": waiting.state,
-                        "activityId": item.activity_id,
-                        "sequence": item.sequence,
-                        "reason": outcome.result_message,
-                    },
+                await self._publish_item_waiting(
+                    run_id, item, state=waiting.state, reason=outcome.result_message,
                 )
                 return False
             return True
@@ -622,45 +600,26 @@ class RunExecutionService:
             self._mark_item_waiting(run_id, item.activity_id, code, message)
             self._record_runtime_problem(run, item, code, message)
             waiting = self._set_waiting(run_id, message)
-            await self.events.publish(
-                "run.waiting_user",
-                {
-                    "runId": run_id,
-                    "state": waiting.state,
-                    "activityId": item.activity_id,
-                    "sequence": item.sequence,
-                    "reason": message,
-                },
+            await self._publish_item_waiting(
+                run_id, item, state=waiting.state, reason=message,
             )
             return False
 
         self._refresh_source_closure(run_id)
-        await self.events.publish(
-            "run.item_updated",
-            {
-                "runId": run_id,
-                "activityId": item.activity_id,
-                "sequence": item.sequence,
-                "state": result["state"],
-                "resultCode": result["resultCode"],
-                "mode": "unofficial",
-                "platformStatus": "participated"
-                if result["state"] == "completed"
-                else "manual_review",
-            },
+        await self._publish_item_updated(
+            run_id, item,
+            state=result["state"],
+            result_code=result["resultCode"],
+            mode="unofficial",
+            platform_status="participated"
+            if result["state"] == "completed"
+            else "manual_review",
         )
         if result["state"] in {"completed", "skipped"}:
             return True
         waiting = self._set_waiting(run_id, str(result["resultMessage"]))
-        await self.events.publish(
-            "run.waiting_user",
-            {
-                "runId": run_id,
-                "state": waiting.state,
-                "activityId": item.activity_id,
-                "sequence": item.sequence,
-                "reason": result["resultMessage"],
-            },
+        await self._publish_item_waiting(
+            run_id, item, state=waiting.state, reason=result["resultMessage"],
         )
         return False
 
@@ -684,29 +643,17 @@ class RunExecutionService:
         if _should_record_runtime_problem(outcome.result_code):
             self._record_runtime_problem(run, item, outcome.result_code, outcome.result_message)
         self._refresh_source_closure(run_id)
-        await self.events.publish(
-            "run.item_updated",
-            {
-                "runId": run_id,
-                "activityId": item.activity_id,
-                "sequence": item.sequence,
-                "state": outcome.item_state,
-                "resultCode": outcome.result_code,
-                "mode": outcome.mode,
-                "platformStatus": outcome.platform_status,
-            },
+        await self._publish_item_updated(
+            run_id, item,
+            state=outcome.item_state,
+            result_code=outcome.result_code,
+            mode=outcome.mode,
+            platform_status=outcome.platform_status,
         )
         if outcome.item_state in {"waiting_user", "running"}:
             waiting = self._set_waiting(run_id, outcome.result_message)
-            await self.events.publish(
-                "run.waiting_user",
-                {
-                    "runId": run_id,
-                    "state": waiting.state,
-                    "activityId": item.activity_id,
-                    "sequence": item.sequence,
-                    "reason": outcome.result_message,
-                },
+            await self._publish_item_waiting(
+                run_id, item, state=waiting.state, reason=outcome.result_message,
             )
             return
 
@@ -715,15 +662,8 @@ class RunExecutionService:
                 run_id,
                 "当前条目已得到安全终态；点击继续后才会打开下一条动态。",
             )
-            await self.events.publish(
-                "run.waiting_user",
-                {
-                    "runId": run_id,
-                    "state": waiting.state,
-                    "activityId": item.activity_id,
-                    "sequence": item.sequence,
-                    "reason": waiting.status_detail,
-                },
+            await self._publish_item_waiting(
+                run_id, item, state=waiting.state, reason=waiting.status_detail,
             )
             return
 

@@ -1,13 +1,16 @@
 """Behavior and operation-count checks for stage 4 data-path optimizations."""
 
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import event
 from sqlmodel import Session, create_engine
 
 from backend.api.routes import discoveries as discovery_routes
+from backend.api.routes import runs as run_routes
 from backend.config import Settings
 from backend.db.engine import init_database
 from backend.db.models.activity import Activity, ActivityOrigin
@@ -17,8 +20,12 @@ from backend.db.models.source import Readlist, SourceArticle, SourceProfile
 from backend.db.repositories import activities
 from backend.domain.json_utils import load_json_object
 from backend.jobs.events import EventHub
+from backend.problems.registry import ProblemRegistry
 from backend.use_cases import source_closure
 from backend.use_cases.execution_plan import ExecutionPlanService, PlanRequest
+from backend.use_cases.run_execution import RunExecutionService
+from backend.use_cases.run_execution_outcomes import RuntimeOutcome
+from backend.use_cases.run_execution_state import RunExecutionStore
 
 
 def seed(engine, count):
@@ -157,3 +164,106 @@ def test_legacy_public_imports_are_compatible():
     from backend.use_cases.source_like_plan import SourceLikePlanService as old_service
 
     assert old_service is SourceLikePlanService
+
+
+@pytest.mark.parametrize("count", [1, 100])
+def test_run_response_and_persistence_reuse_item_rows(count, monkeypatch):
+    engine = create_engine("sqlite://")
+    init_database(engine)
+    discovery_id, _ = seed(engine, count)
+    service = ExecutionPlanService(Settings(), engine, EventHub())
+    run = service.create(PlanRequest(discovery_id))
+    statements = []
+
+    def capture(_conn, _cursor, statement, _params, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        monkeypatch.setattr(run_routes, "get_state", lambda _: SimpleNamespace(
+            plan_service=service, settings=Settings(),
+        ))
+        payload = run_routes.get_run(run.id, None)
+        assert len(payload["items"]) == count
+        assert payload["stats"]["sourceClosure"]["items"][0]["activityCount"] == count
+        assert sum("FROM run_items" in sql for sql in statements) == 1
+        assert sum("FROM runs" in sql for sql in statements) == 1
+        store = RunExecutionStore(
+            engine, source_closure.SourceClosureService(engine), ProblemRegistry(engine)
+        )
+        statements.clear()
+        store.refresh_source_closure(run.id)
+        assert sum("FROM run_items" in sql for sql in statements) == 1
+        _, items = service.get(run.id)
+        statements.clear()
+        store.persist_outcome(run, items[0], RuntimeOutcome(
+            item_state="completed", mode="official", unofficial_type="unknown",
+            platform_status="participated", result_code="DONE", result_message="done",
+            block_reason=None, inspection={}, selector_version="test",
+            inspected_at=datetime.now(UTC),
+        ))
+        # One PK lookup for the mutation and one list shared by stats and closure.
+        assert sum("FROM run_items" in sql for sql in statements) == 2
+        _, _, closure = service.get_snapshot(run.id)
+        assert closure.rows[0].terminal_activity_count == 1
+        with Session(engine) as session:
+            statements.clear()
+            empty = source_closure.calculate_source_closure(session, run, items=[])
+            assert empty.rows[0].activity_count == 0
+            assert not any("FROM run_items" in sql for sql in statements)
+        with pytest.raises(ValueError, match="RUN_NOT_FOUND"):
+            service.get_snapshot(-1)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state,code,mode", [
+    ("completed", "OFFICIAL_DONE", "official"),
+    ("completed", "RESERVATION_CONFIRMED", "reservation"),
+    ("waiting_user", "RESERVATION_UNKNOWN", "reservation"),
+])
+async def test_official_result_events_preserve_fields_and_pause_order(state, code, mode):
+    engine = create_engine("sqlite://")
+    init_database(engine)
+    discovery_id, _ = seed(engine, 1)
+    plans = ExecutionPlanService(Settings(), engine, EventHub())
+    run = plans.create(PlanRequest(discovery_id))
+    with Session(engine) as session:
+        saved = session.get(Run, run.id)
+        saved.state = "running"
+        session.add(saved)
+        session.commit()
+    run, items = plans.get(run.id)
+    hub = EventHub()
+    queue = hub.subscribe()
+    writer = SimpleNamespace(execute=AsyncMock(return_value={
+        "state": state, "resultCode": code, "resultState": "platform-evidence",
+        "resultMessage": "original reason",
+    }))
+    execution = RunExecutionService(engine, None, hub, official_participation_service=writer)
+    try:
+        result = await execution._execute_automatic_official(run, items[0])
+        assert result == (state == "completed")
+        updated = queue.get_nowait()
+        assert updated.name == "run.item_updated"
+        assert updated.data == {
+            "runId": run.id, "activityId": items[0].activity_id,
+            "sequence": items[0].sequence, "state": state, "resultCode": code,
+            "mode": mode, "platformStatus": "platform-evidence",
+        }
+        if state == "waiting_user":
+            paused = queue.get_nowait()
+            assert paused.name == "run.waiting_user"
+            assert paused.data == {
+                "runId": run.id, "activityId": items[0].activity_id,
+                "sequence": items[0].sequence, "state": "waiting_user",
+                "reason": "original reason",
+            }
+            assert plans.get(run.id)[0].state == "waiting_user"
+        assert queue.empty()
+    finally:
+        hub.unsubscribe(queue)
+        engine.dispose()
